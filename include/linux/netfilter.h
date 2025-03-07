@@ -47,7 +47,12 @@ typedef unsigned int nf_hookfn(unsigned int hooknum,
 			       const struct net_device *in,
 			       const struct net_device *out,
 			       int (*okfn)(struct sk_buff *));
+				   
+//NF_HOOK 插入机制的核心是一个钩子链，钩子链是由一系列钩子函数（即 nf_hook_ops 结构体）组成的链表。
+//每个 nf_hook_ops 结构体代表一个钩子函数，包含该函数的处理逻辑、优先级、相关的网络操作等信息
 
+//hooknum：表示钩子函数绑定到哪个钩子位置（如 NF_INET_PRE_ROUTING，NF_INET_LOCAL_IN 等），决定了钩子的触发时机。
+//priority：表示钩子函数在同一个钩子位置上的执行优先级。优先级较小的钩子会先执行。
 struct nf_hook_ops {
 	struct list_head list;
 
@@ -290,6 +295,10 @@ nf_nat_decode_session(struct sk_buff *skb, struct flowi *fl, u_int8_t family)
 }
 
 #else /* !CONFIG_NETFILTER */
+//钩子的触发机制
+//Netfilter 钩子的触发机制是由网络栈中的不同函数自动触发的，通常这些钩子会在内核网络层的相关数据包处理函数中被调用。
+//每个钩子都会检查数据包，判断是否执行相应的操作。你可以在相应的钩子中注册回调函数，来修改或过滤数据包。
+//钩子的触发顺序和执行机制是由网络栈的代码控制的，内核根据数据包的状态、目标和传输路径来决定触发哪一个钩子。
 #define NF_HOOK(pf, hook, skb, indev, outdev, okfn) (okfn)(skb)
 #define NF_HOOK_COND(pf, hook, skb, indev, outdev, okfn, cond) (okfn)(skb)
 static inline int nf_hook_thresh(u_int8_t pf, unsigned int hook,

@@ -927,6 +927,15 @@ static void igb_configure_msix(struct igb_adapter *adapter)
  *  igb_request_msix allocates MSI-X vectors and requests interrupts from the
  *  kernel.
  **/
+/**
+ * @brief 请求MSI-X中断
+ *
+ * 为网卡适配器请求MSI-X中断，并为每个队列向量分配中断处理程序。
+ *
+ * @param adapter 指向igb_adapter结构的指针，包含网卡适配器的相关信息
+ *
+ * @return 成功时返回0，失败时返回错误码
+ */
 static int igb_request_msix(struct igb_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
@@ -2757,12 +2766,12 @@ static int __igb_open(struct net_device *netdev, bool resuming)
 
 	netif_carrier_off(netdev);
 
-	/* allocate transmit descriptors */
+	/* allocate transmit descriptors */ //分配传输描述符数组
 	err = igb_setup_all_tx_resources(adapter);
 	if (err)
 		goto err_setup_tx;
 
-	/* allocate receive descriptors */
+	/* allocate receive descriptors */ //分配接收描述符数组
 	err = igb_setup_all_rx_resources(adapter);
 	if (err)
 		goto err_setup_rx;
@@ -2809,7 +2818,7 @@ static int __igb_open(struct net_device *netdev, bool resuming)
 		wr32(E1000_CTRL_EXT, reg_data);
 	}
 
-	netif_tx_start_all_queues(netdev);
+	netif_tx_start_all_queues(netdev);   //开启全部队列
 
 	if (!resuming)
 		pm_runtime_put(&pdev->dev);
@@ -2884,17 +2893,22 @@ static int igb_close(struct net_device *netdev)
  *
  *  Return 0 on success, negative on failure
  **/
+//需要理解一个点就是，一个Ring Buffer对应两个数组，这两个环形数组中相同位置的指针都指向同一个skb, 这样子，内核和硬件
+//就可以共同访问同样的数据了，内核往skb写数据，网卡硬件负责发送
+//这两个数组的内存申请过程是在网卡的启动准备阶段进行的。
 int igb_setup_tx_resources(struct igb_ring *tx_ring)
 {
 	struct device *dev = tx_ring->dev;
 	int size;
 
+	//申请igb_tx_buffer数组的内存空间
 	size = sizeof(struct igb_tx_buffer) * tx_ring->count;
 
 	tx_ring->tx_buffer_info = vzalloc(size);
 	if (!tx_ring->tx_buffer_info)
 		goto err;
 
+	//申请e1000_adv_tx_desc DMA数组的内存空间
 	/* round up to nearest 4K */
 	tx_ring->size = tx_ring->count * sizeof(union e1000_adv_tx_desc);
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
@@ -2903,7 +2917,8 @@ int igb_setup_tx_resources(struct igb_ring *tx_ring)
 					   &tx_ring->dma, GFP_KERNEL);
 	if (!tx_ring->desc)
 		goto err;
-
+	
+	//初始化队列成员
 	tx_ring->next_to_use = 0;
 	tx_ring->next_to_clean = 0;
 
@@ -2928,6 +2943,7 @@ static int igb_setup_all_tx_resources(struct igb_adapter *adapter)
 	struct pci_dev *pdev = adapter->pdev;
 	int i, err = 0;
 
+	//有几个队列就构造几个RingBuffer
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		err = igb_setup_tx_resources(adapter->tx_ring[i]);
 		if (err) {

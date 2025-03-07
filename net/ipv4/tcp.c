@@ -1013,6 +1013,7 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg, int *size)
 	return err;
 }
 
+// 发送数据包，我的理解就是这个函数是注册在socket结构体中的sock中的sk_prot中
 int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t size)
 {
@@ -1067,9 +1068,10 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	mss_now = tcp_send_mss(sk, &size_goal, flags);
 
 	/* Ok commence sending. */
-	iovlen = msg->msg_iovlen;
-	iov = msg->msg_iov;
-	copied = 0;
+	//获取用户传递过来的数据和标志
+	iovlen = msg->msg_iovlen; //用户数据地址
+	iov = msg->msg_iov;      //数据块数为1
+	copied = 0;            
 
 	err = -EPIPE;
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
@@ -1077,8 +1079,11 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 
 	sg = !!(sk->sk_route_caps & NETIF_F_SG);
 
+	//遍历用户层的数据块
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
+
+		//待发送数据块的地址
 		unsigned char __user *from = iov->iov_base;
 
 		iov++;
@@ -1095,14 +1100,15 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		while (seglen > 0) {
 			int copy = 0;
 			int max = size_goal;
-
+			
+			//获取发送队列，即在socket->sock->queue	
 			skb = tcp_write_queue_tail(sk);
 			if (tcp_send_head(sk)) {
 				if (skb->ip_summed == CHECKSUM_NONE)
 					max = mss_now;
 				copy = max - skb->len;
 			}
-
+			//申请skb
 			if (copy <= 0) {
 new_segment:
 				/* Allocate new segment. If the interface is SG,
@@ -1111,6 +1117,7 @@ new_segment:
 				if (!sk_stream_memory_free(sk))
 					goto wait_for_sndbuf;
 
+				//申请skb， 并添加到发送队列的尾部
 				skb = sk_stream_alloc_skb(sk,
 							  select_size(sk, sg),
 							  sk->sk_allocation);
@@ -1122,7 +1129,8 @@ new_segment:
 				 */
 				if (sk->sk_route_caps & NETIF_F_ALL_CSUM)
 					skb->ip_summed = CHECKSUM_PARTIAL;
-
+				
+				//把skb挂载到socket的发送队列上面
 				skb_entail(sk, skb);
 				copy = size_goal;
 				max = size_goal;
@@ -1133,9 +1141,11 @@ new_segment:
 				copy = seglen;
 
 			/* Where to copy to? */
+			//skb中有足够的空间
 			if (skb_availroom(skb) > 0) {
 				/* We have some space in skb head. Superb! */
 				copy = min_t(int, copy, skb_availroom(skb));
+				//将用户空间的数据拷贝到内核空间中，同时计算校验和，from是用户空间的数据地址
 				err = skb_add_data_nocache(sk, skb, from, copy);
 				if (err)
 					goto do_fault;
@@ -1194,6 +1204,11 @@ new_segment:
 			if (skb->len < max || (flags & MSG_OOB) || unlikely(tp->repair))
 				continue;
 
+			//发送判断，所以即使数据复制到tcp的接收队列中，也要考虑是否发送出去
+			//forced_push判断的是未发送的数据是否已经超过了最大窗口的一半。
+			//具体来说，当发送方的未发送数据量（即窗口内的数据）超过了最大窗口的一半时，协议可能会触发“强制推送”（forced push）。
+			//这样做的目的是为了及时推动数据的传输，避免发送方的数据缓冲区堆积过多，从而影响整个网络的流量控制和性能。
+			//在 TCP 中，这种判断有助于避免过多的数据积压，也帮助接收方及时获取数据。通过触发“强制推送”，发送方可以确保接收方尽早处理数据，并且避免接收方的接收缓冲区过度占用。
 			if (forced_push(tp)) {
 				tcp_mark_push(tp, skb);
 				__tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
@@ -1622,7 +1637,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		}
 
 		/* Next get a buffer. */
-
+		//遍历接收队列接收数据
 		skb_queue_walk(&sk->sk_receive_queue, skb) {
 			/* Now that we have two receive queues this
 			 * shouldn't happen.
@@ -1753,7 +1768,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			release_sock(sk);
 			lock_sock(sk);
 		} else
-			sk_wait_data(sk, &timeo);
+			sk_wait_data(sk, &timeo);//如果没有足够的数据，启用sk_wait_data阻塞当前进程
 
 #ifdef CONFIG_NET_DMA
 		tcp_service_net_dma(sk, false);  /* Don't block */

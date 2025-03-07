@@ -1822,6 +1822,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 				sk->sk_rx_dst = NULL;
 			}
 		}
+		//执行连接状态下的数据处理
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len)) {
 			rsk = sk;
 			goto reset;
@@ -1989,8 +1990,8 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	if (!skb_csum_unnecessary(skb) && tcp_v4_checksum_init(skb))
 		goto csum_error;
 
-	th = tcp_hdr(skb);
-	iph = ip_hdr(skb);
+	th = tcp_hdr(skb);   //获取TCP header
+	iph = ip_hdr(skb);   //获取IP header
 	TCP_SKB_CB(skb)->seq = ntohl(th->seq);
 	TCP_SKB_CB(skb)->end_seq = (TCP_SKB_CB(skb)->seq + th->syn + th->fin +
 				    skb->len - th->doff * 4);
@@ -1999,6 +2000,7 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->ip_dsfield = ipv4_get_dsfield(iph);
 	TCP_SKB_CB(skb)->sacked	 = 0;
 
+	//根据数据包header中的IP，端口信息找到对应的socket
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
 	if (!sk)
 		goto no_tcp_socket;
@@ -2023,6 +2025,8 @@ process:
 
 	bh_lock_sock_nested(sk);
 	ret = 0;
+
+	//socket未被用户锁定
 	if (!sock_owned_by_user(sk)) {
 #ifdef CONFIG_NET_DMA
 		struct tcp_sock *tp = tcp_sk(sk);
@@ -2034,7 +2038,7 @@ process:
 #endif
 		{
 			if (!tcp_prequeue(sk, skb))
-				ret = tcp_v4_do_rcv(sk, skb);
+				ret = tcp_v4_do_rcv(sk, skb);     //进入重要的函数 
 		}
 	} else if (unlikely(sk_add_backlog(sk, skb,
 					   sk->sk_rcvbuf + sk->sk_sndbuf))) {

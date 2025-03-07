@@ -341,7 +341,11 @@ u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 
 	if (queue_index < 0 || skb->ooo_okay ||
 	    queue_index >= dev->real_num_tx_queues) {
+		
+		//获取XPS配置
 		int new_index = get_xps_queue(dev, skb);
+
+		//自动计算队列
 		if (new_index < 0)
 			new_index = skb_tx_hash(dev, skb);
 

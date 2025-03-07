@@ -84,9 +84,38 @@ struct inet_connection_sock_af_ops {
  * @icsk_ack:		   Delayed ACK control data
  * @icsk_mtup;		   MTU probing control data
  */
+
+//两者介绍：
+// struct sock 的操作集 (sk_prot)
+// 负责传输层协议的通用操作（如 TCP/UDP 的收发、连接生命周期管理）。
+// inet_connection_sock_af_ops
+// 负责地址族相关的连接管理细节（如 IPv4/IPv6 的头部处理、连接建立差异）。
+
+//之间的调用关系：
+//struct sock 的通用操作（如 sk_prot->connect）会调用 inet_connection_sock_af_ops 中的地址族特定操作
+//内核根据套接字的地址族（AF_INET 或 AF_INET6）动态绑定对应的 af_ops。例如：
+//IPv4 使用 inet_connection_sock_af_ops，IPv6 使用 inet6_connection_sock_af_ops。
+
+//功能扩展：
+//inet_connection_sock 通过 af_ops 实现地址族相关的扩展，而无需修改 struct sock 的通用逻辑。
+
+//继承关系：
+// struct sock
+// 是最基础的套接字表示，包含通用网络层属性（如地址、端口、状态）和协议无关的操作（如 sk_prot->sendmsg）。
+// struct inet_sock
+// 继承自 struct sock，扩展了 IPv4 协议族相关的字段（如源/目的 IP、TTL、TOS 等）。
+// struct inet_connection_sock
+// 继承自 struct inet_sock，专为**面向连接的协议（如 TCP）**设计，添加了连接管理所需的字段（如请求队列、拥塞控制、ACK 处理等）。
+
+
+
+// C是过程式语言，没有类和继承的语法，但可以通过结构体的组合来模拟。例如，通过在一个结构体中包含另一个结构体作为第一个成员，这样可以实现类似继承的效果。
+// 然后，用户可能想知道具体的实现方法。我需要解释如何通过结构体嵌套来实现继承，比如父结构体作为子结构体的第一个成员，这样可以通过指针转换来访问父类的成员。同时，需要提到这种方法如何允许子类扩展父类的功能，添加新的字段。
+// 另外，用户可能关心这种模拟继承的用途和限制。比如，在Linux内核中，网络协议栈的结构体层次就使用了这种技术，实现不同层次的协议结构体的扩展。同时，需要指出C的这种模拟继承没有类型检查，容易出错，需要开发者自己管理。
+// 可能用户会混淆结构体嵌套和真正的继承，需要明确说明C中没有继承，只是通过内存布局和类型转换来模拟。还要注意内存对齐的问题，确保父结构体作为第一个成员时，子结构体的指针可以安全地转换为父结构体指针。
 struct inet_connection_sock {
 	/* inet_sock has to be the first member! */
-	struct inet_sock	  icsk_inet;
+	struct inet_sock	  icsk_inet;             //里面第一个成员是sock结构体，所以可以强转，
 	struct request_sock_queue icsk_accept_queue;
 	struct inet_bind_bucket	  *icsk_bind_hash;
 	unsigned long		  icsk_timeout;
@@ -95,7 +124,7 @@ struct inet_connection_sock {
 	__u32			  icsk_rto;
 	__u32			  icsk_pmtu_cookie;
 	const struct tcp_congestion_ops *icsk_ca_ops;
-	const struct inet_connection_sock_af_ops *icsk_af_ops;
+	const struct inet_connection_sock_af_ops *icsk_af_ops;     //here
 	unsigned int		  (*icsk_sync_mss)(struct sock *sk, u32 pmtu);
 	__u8			  icsk_ca_state;
 	__u8			  icsk_retransmits;
@@ -137,7 +166,10 @@ struct inet_connection_sock {
 #define ICSK_TIME_LOSS_PROBE	5	/* Tail loss probe timer */
 
 static inline struct inet_connection_sock *inet_csk(const struct sock *sk)
-{
+{	
+	//它接受一个 const struct sock *sk 指针，指向一个 sock 结构体（它可以是 sock 或任何从 sock 扩展的结构体，如 inet_connection_sock）。
+	//由于 inet_connection_sock 结构体是以 sock 作为其第一个成员的，它的内存布局在前面部分和 sock 完全一致。因此，这里可以通过强制类型转换，将 sock * 转换为 inet_connection_sock *。
+	//该转换是安全的，因为 sk 只是 inet_connection_sock 的前部分。
 	return (struct inet_connection_sock *)sk;
 }
 

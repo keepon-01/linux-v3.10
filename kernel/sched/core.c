@@ -3142,7 +3142,8 @@ asmlinkage void __sched preempt_schedule_irq(void)
 
 int default_wake_function(wait_queue_t *curr, unsigned mode, int wake_flags,
 			  void *key)
-{
+{	
+	//执行这个函数之后，socket上阻塞的进程就被推入到运行队列中了，这又产生一次进程上下文切换的开销
 	return try_to_wake_up(curr->private, mode, wake_flags);
 }
 EXPORT_SYMBOL(default_wake_function);
@@ -3164,6 +3165,10 @@ static void __wake_up_common(wait_queue_head_t *q, unsigned int mode,
 	list_for_each_entry_safe(curr, next, &q->task_list, task_list) {
 		unsigned flags = curr->flags;
 
+		//curr->func = autoremove_wake_function，这个函数是最开始DEFINE_WAIT定义队列项的时候传入的，然后整体放入到等待队列中。一个思想就是未来用什么函数，都提前设置好，封装好。
+		//上面的函数赋值是在简单的同步阻塞情况下使用，在使用epoll情况下，将这个func设置成了ep_poll_callback了（epoll_ctl）
+		//第一者上设置等待队列时，实际是放的简单同步阻塞场景下的阻塞的进程，而第二者进程是NULL，我觉得核心就是设置的这个回调函数
+		//目前知道使用epoll_wait的时候，将func设置成default_wake_function，然后绑上进程信息，整体项放在epoll结构中的wq等待队列中，而在epoll_ctl的时候，将func设置成ep_poll_callback
 		if (curr->func(curr, mode, wake_flags, key) &&
 				(flags & WQ_FLAG_EXCLUSIVE) && !--nr_exclusive)
 			break;
@@ -3236,6 +3241,8 @@ void __wake_up_sync_key(wait_queue_head_t *q, unsigned int mode,
 		wake_flags = 0;
 
 	spin_lock_irqsave(&q->lock, flags);
+
+	//nr_exclusive = 1; 即使有多个进程都阻塞在同一个socket上，也只唤醒一个进程，其作用是为了避免惊群，而不是把所有的进程都唤醒
 	__wake_up_common(q, mode, nr_exclusive, wake_flags, key);
 	spin_unlock_irqrestore(&q->lock, flags);
 }

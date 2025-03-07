@@ -622,7 +622,7 @@ static inline int __sock_sendmsg_nosec(struct kiocb *iocb, struct socket *sock,
 	si->msg = msg;
 	si->size = size;
 
-	return sock->ops->sendmsg(iocb, sock, msg, size);
+	return sock->ops->sendmsg(iocb, sock, msg, size); //最终实际执行的是inet_sendmsg, 这个函数是协议族的sendmsg函数
 }
 
 static inline int __sock_sendmsg(struct kiocb *iocb, struct socket *sock,
@@ -773,7 +773,7 @@ static inline int __sock_recvmsg_nosec(struct kiocb *iocb, struct socket *sock,
 	si->size = size;
 	si->flags = flags;
 
-	return sock->ops->recvmsg(iocb, sock, msg, size, flags);
+	return sock->ops->recvmsg(iocb, sock, msg, size, flags);//这里执行的是inet_recvmsg
 }
 
 static inline int __sock_recvmsg(struct kiocb *iocb, struct socket *sock,
@@ -1757,18 +1757,25 @@ SYSCALL_DEFINE6(sendto, int, fd, void __user *, buff, size_t, len,
 	struct socket *sock;
 	struct sockaddr_storage address;
 	int err;
+
+	//构造msghdr结构体，用来存放数据包的信息的
+	//struct msghdr 是一个用户空间的结构体，定义在 sys/socket.h 中，
+	//主要用于表示与消息传递相关的信息，尤其是在 sendmsg() 和 recvmsg() 系统调用中使用。
 	struct msghdr msg;
 	struct iovec iov;
 	int fput_needed;
 
 	if (len > INT_MAX)
 		len = INT_MAX;
+	//根据用户传入的fd获取socket结构体，这个地方是发送数据包方向的处理，不是接收数据包方向的处理
 	sock = sockfd_lookup_light(fd, &err, &fput_needed);
 	if (!sock)
 		goto out;
 
 	iov.iov_base = buff;
 	iov.iov_len = len;
+
+	//构造与填充信息
 	msg.msg_name = NULL;
 	msg.msg_iov = &iov;
 	msg.msg_iovlen = 1;
@@ -1785,6 +1792,8 @@ SYSCALL_DEFINE6(sendto, int, fd, void __user *, buff, size_t, len,
 	if (sock->file->f_flags & O_NONBLOCK)
 		flags |= MSG_DONTWAIT;
 	msg.msg_flags = flags;
+
+	//开始发送数据，最终实际调用的socket结构体中的ops中提前注册的函数，即inet_sendmsg
 	err = sock_sendmsg(sock, &msg, len);
 
 out_put:
@@ -1822,6 +1831,7 @@ SYSCALL_DEFINE6(recvfrom, int, fd, void __user *, ubuf, size_t, size,
 
 	if (size > INT_MAX)
 		size = INT_MAX;
+	//根据用户传入的fd获取socket结构体对象，所以这个所在的函数是接收方向的处理，不是发送数据包方向的处理
 	sock = sockfd_lookup_light(fd, &err, &fput_needed);
 	if (!sock)
 		goto out;
@@ -1836,6 +1846,7 @@ SYSCALL_DEFINE6(recvfrom, int, fd, void __user *, ubuf, size_t, size,
 	msg.msg_namelen = sizeof(address);
 	if (sock->file->f_flags & O_NONBLOCK)
 		flags |= MSG_DONTWAIT;
+	//这里是接收的处理。
 	err = sock_recvmsg(sock, &msg, size, flags);
 
 	if (err >= 0 && addr != NULL) {

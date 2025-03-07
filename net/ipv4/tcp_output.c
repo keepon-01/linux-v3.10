@@ -825,10 +825,11 @@ void tcp_wfree(struct sk_buff *skb)
  * We are working here with either a clone of the original
  * SKB, or a fresh unique copy made by the retransmit engine.
  */
+//这个函数是发送数据位于传输层的最后一步骤了，接下来就是网络层的进行的下一层的操作了，调用的是网络层提供的发送接口icsk->icsk_af_ops->queue_xmit
 static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			    gfp_t gfp_mask)
 {
-	const struct inet_connection_sock *icsk = inet_csk(sk);
+	const struct inet_connection_sock *icsk = inet_csk(sk);//这里拿到的呢！！
 	struct inet_sock *inet;
 	struct tcp_sock *tp;
 	struct tcp_skb_cb *tcb;
@@ -846,6 +847,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	if (icsk->icsk_ca_ops->flags & TCP_CONG_RTT_STAMP)
 		__net_timestamp(skb);
 
+	//克隆出新的skb出来，
+	//是因为skb在后续在调用网络层，最后达到网卡发送完成的时候，这个skb会释放，
+	//而我们知道tcp协议是支持丢失重传的，在收到对方的ACK之前，这个skb是不会被释放的。
+	//所以内核的做法就是每次调用网卡发送的时候，实际就是传递出去的skb的一个拷贝，等收到ACK才真正删除。
 	if (likely(clone_it)) {
 		const struct sk_buff *fclone = skb + 1;
 
@@ -892,6 +897,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	atomic_add(skb->truesize, &sk->sk_wmem_alloc);
 
 	/* Build TCP header and checksum it. */
+	//封装TCP头，
 	th = tcp_hdr(skb);
 	th->source		= inet->inet_sport;
 	th->dest		= inet->inet_dport;
@@ -947,7 +953,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		TCP_ADD_STATS(sock_net(sk), TCP_MIB_OUTSEGS,
 			      tcp_skb_pcount(skb));
 
-	err = icsk->icsk_af_ops->queue_xmit(skb, &inet->cork.fl);
+	//调用网络层发送接口
+	err = icsk->icsk_af_ops->queue_xmit(skb, &inet->cork.fl);//这个调用的方法是哪里注册的和，socket->sock->sk_prot那边有什么关系吗
 	if (likely(err <= 0))
 		return err;
 
@@ -1808,6 +1815,7 @@ static int tcp_mtu_probe(struct sock *sk)
  * Returns true, if no segments are in flight and we have queued segments,
  * but cannot send anything now because of SWS or another problem.
  */
+//主要干的事情是循环获取带发送的skb,同时还要进行滑动窗口管理
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
@@ -1829,6 +1837,7 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 	}
 
+	//循环获取带发送的skb
 	while ((skb = tcp_send_head(sk))) {
 		unsigned int limit;
 
@@ -1839,6 +1848,7 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		if (unlikely(tp->repair) && tp->repair_queue == TCP_SEND_QUEUE)
 			goto repair; /* Skip network transmission */
 
+		//滑动窗口相关
 		cwnd_quota = tcp_cwnd_test(tp, skb);
 		if (!cwnd_quota) {
 			if (push_one == 2)
@@ -1881,6 +1891,7 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 		TCP_SKB_CB(skb)->when = tcp_time_stamp;
 
+		//这里才是真正开启发送
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
 			break;
 

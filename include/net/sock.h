@@ -297,15 +297,15 @@ struct sock {
 #define sk_dontcopy_end		__sk_common.skc_dontcopy_end
 #define sk_hash			__sk_common.skc_hash
 #define sk_family		__sk_common.skc_family
-#define sk_state		__sk_common.skc_state
+#define sk_state		__sk_common.skc_state      //比如TCP的状态，如listen, established状态，这个字段只用于tcp协议，但是socket和sock两个结构体可以用于多种类型
 #define sk_reuse		__sk_common.skc_reuse
 #define sk_reuseport		__sk_common.skc_reuseport
 #define sk_bound_dev_if		__sk_common.skc_bound_dev_if
 #define sk_bind_node		__sk_common.skc_bind_node
-#define sk_prot			__sk_common.skc_prot
+#define sk_prot			__sk_common.skc_prot     //这里是也是协议操作，和struct proto_ops *ops是有区别的，然后这里只是声明，比如tcp_prot会赋值给她
 #define sk_net			__sk_common.skc_net
 	socket_lock_t		sk_lock;
-	struct sk_buff_head	sk_receive_queue;
+	struct sk_buff_head	sk_receive_queue; //接收队列，存储的经过协议处理的数据包后的有效数据
 	/*
 	 * The backlog queue is special, it is always used with
 	 * the per-socket spinlock held and requires low latency
@@ -329,7 +329,7 @@ struct sock {
 	int			sk_rcvbuf;
 
 	struct sk_filter __rcu	*sk_filter;
-	struct socket_wq __rcu	*sk_wq;
+	struct socket_wq __rcu	*sk_wq;   //等待队列，为线程的同步服务
 
 #ifdef CONFIG_NET_DMA
 	struct sk_buff_head	sk_async_wait_queue;
@@ -340,7 +340,7 @@ struct sock {
 #endif
 	unsigned long 		sk_flags;
 	struct dst_entry	*sk_rx_dst;
-	struct dst_entry __rcu	*sk_dst_cache;
+	struct dst_entry __rcu	*sk_dst_cache;    //可能这里就是缓存在socket中的路由表，从而减少对系统级别的路由表的查询，缓存不就是这个作用吗
 	spinlock_t		sk_dst_lock;
 	atomic_t		sk_wmem_alloc;
 	atomic_t		sk_omem_alloc;
@@ -350,8 +350,8 @@ struct sock {
 	unsigned int		sk_shutdown  : 2,
 				sk_no_check  : 2,
 				sk_userlocks : 4,
-				sk_protocol  : 8,
-				sk_type      : 16;
+				sk_protocol  : 8,    //协议类型，比如TCP,UDP等 占了8位，所以可以表示256种协议
+				sk_type      : 16;   //套接字类型，比如SOCK_STREAM,SOCK_DGRAM等
 	kmemcheck_bitfield_end(flags);
 	int			sk_wmem_queued;
 	gfp_t			sk_allocation;

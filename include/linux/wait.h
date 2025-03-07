@@ -31,7 +31,7 @@ struct wait_bit_queue {
 };
 
 struct __wait_queue_head {
-	spinlock_t lock;
+	spinlock_t lock;  //自旋锁，适合锁持有时间短的场景，因为线程在等待的时候是持续检查锁的状态，不会进入睡眠状态，所以在多核心的时候没有上下文切换的开销
 	struct list_head task_list;
 };
 typedef struct __wait_queue_head wait_queue_head_t;
@@ -82,7 +82,7 @@ static inline void init_waitqueue_entry(wait_queue_t *q, struct task_struct *p)
 {
 	q->flags = 0;
 	q->private = p;
-	q->func = default_wake_function;
+	q->func = default_wake_function;//回调函数，eventpoll中的执行epoll_wait时，没有数据时阻塞自己进来的。
 }
 
 static inline void init_waitqueue_func_entry(wait_queue_t *q,
@@ -829,6 +829,7 @@ void abort_exclusive_wait(wait_queue_head_t *q, wait_queue_t *wait,
 int autoremove_wake_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 int wake_bit_function(wait_queue_t *wait, unsigned mode, int sync, void *key);
 
+//注册了回调函数autoremove_wake_function， 并把当前的进程描述符current关联到.private成员上
 #define DEFINE_WAIT_FUNC(name, function)				\
 	wait_queue_t name = {						\
 		.private	= current,				\

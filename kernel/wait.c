@@ -64,6 +64,8 @@ EXPORT_SYMBOL(remove_wait_queue);
  * stops them from bleeding out - it would still allow subsequent
  * loads to move into the critical region).
  */
+
+//调用这个方法把新定义的等待队列项wait插入sock对象的等待队列中
 void
 prepare_to_wait(wait_queue_head_t *q, wait_queue_t *wait, int state)
 {

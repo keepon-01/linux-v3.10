@@ -22,6 +22,7 @@ static inline struct neighbour *__ipv4_neigh_lookup_noref(struct net_device *dev
 	struct neighbour *n;
 	u32 hash_val;
 
+	//计算哈希值，加速查找
 	hash_val = arp_hashfn(key, dev, nht->hash_rnd[0]) >> (32 - nht->hash_shift);
 	for (n = rcu_dereference_bh(nht->hash_buckets[hash_val]);
 	     n != NULL;

@@ -1899,10 +1899,14 @@ static void __release_sock(struct sock *sk)
 int sk_wait_data(struct sock *sk, long *timeo)
 {
 	int rc;
+	//当前进程(current)关联到所定义的等待队列项上
 	DEFINE_WAIT(wait);
 
+	//sk_sleep来获取sock对象下的wait队列
+	//并准备挂起，将进程状态设置为可打断  TASK_INTERRUPTIBLE
 	prepare_to_wait(sk_sleep(sk), &wait, TASK_INTERRUPTIBLE);
 	set_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
+	//通过调用schedule_timeout让出CPU，然后进行睡眠, 这个时候会导致一次进程上下文切换的开销！！！
 	rc = sk_wait_event(sk, timeo, !skb_queue_empty(&sk->sk_receive_queue));
 	clear_bit(SOCK_ASYNC_WAITDATA, &sk->sk_socket->flags);
 	finish_wait(sk_sleep(sk), &wait);
@@ -2154,13 +2158,16 @@ static void sock_def_error_report(struct sock *sk)
 	rcu_read_unlock();
 }
 
+//有数据可读时，唤醒等待队列上的进程
 static void sock_def_readable(struct sock *sk, int len)
 {
 	struct socket_wq *wq;
 
 	rcu_read_lock();
 	wq = rcu_dereference(sk->sk_wq);
+	//有进程在此socket的等待队列上
 	if (wq_has_sleeper(wq))
+		//唤醒等待队列上的进程,在不是简单同步阻塞的场景下，比如使用epoll场景下，也就是执行等待队列项上的回调函数
 		wake_up_interruptible_sync_poll(&wq->wait, POLLIN | POLLPRI |
 						POLLRDNORM | POLLRDBAND);
 	sk_wake_async(sk, SOCK_WAKE_WAITD, POLL_IN);
@@ -2253,7 +2260,7 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 			af_family_clock_key_strings[sk->sk_family]);
 
 	sk->sk_state_change	=	sock_def_wakeup;
-	sk->sk_data_ready	=	sock_def_readable;
+	sk->sk_data_ready	=	sock_def_readable;    //这里已经赋值了，也就是去唤醒等待队列中的等待的用户进程
 	sk->sk_write_space	=	sock_def_write_space;
 	sk->sk_error_report	=	sock_def_error_report;
 	sk->sk_destruct		=	sock_def_destruct;

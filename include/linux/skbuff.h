@@ -336,6 +336,10 @@ typedef unsigned char *sk_buff_data_t;
 #define NET_SKBUFF_NF_DEFRAG_NEEDED 1
 #endif
 
+// struct sk_buff 是 Linux 网络栈中非常重要的结构体，它封装了数据包的所有信息。
+// 该结构体包含了数据包的实际内容、网络协议、网络接口、头部和尾部指针、校验和、流量控制信息、连接跟踪信息等。它在内核中用于网络数据包的传递和管理，贯穿于整个网络协议栈的实现。
+
+//通过 skb，内核能够有效地管理和处理网络数据包，进行多种网络操作，如接收、发送、分段、重组、流量管理、过滤等。
 /** 
  *	struct sk_buff - socket buffer
  *	@next: Next buffer in list
@@ -421,7 +425,7 @@ struct sk_buff {
 	 */
 	char			cb[48] __aligned(8);
 
-	unsigned long		_skb_refdst;
+	unsigned long		_skb_refdst;     //保存了一些路由相关信息，这样后续发送数据包，可以从这里进行查询获取
 #ifdef CONFIG_XFRM
 	struct	sec_path	*sp;
 #endif
@@ -1510,6 +1514,7 @@ static inline int skb_availroom(const struct sk_buff *skb)
  *	Increase the headroom of an empty &sk_buff by reducing the tail
  *	room. This is only allowed for an empty buffer.
  */
+//通过这个方法给数据包预留包头空间，主要用于封装协议头，这样灵活移动指针的情况下，从而减少不必要的拷贝·
 static inline void skb_reserve(struct sk_buff *skb, int len)
 {
 	skb->data += len;

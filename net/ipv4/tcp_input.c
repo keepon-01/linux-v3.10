@@ -4248,6 +4248,8 @@ static int __must_check tcp_queue_rcv(struct sock *sk, struct sk_buff *skb, int 
 	eaten = (tail &&
 		 tcp_try_coalesce(sk, tail, skb, fragstolen)) ? 1 : 0;
 	tcp_sk(sk)->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+
+	//把接收到的数据包放入到socket的接收队列的尾部
 	if (!eaten) {
 		__skb_queue_tail(&sk->sk_receive_queue, skb);
 		skb_set_owner_r(skb, sk);
@@ -5070,6 +5072,9 @@ discard:
  *	the rest is checked inline. Fast processing is turned on in
  *	tcp_data_queue when everything is OK.
  */
+
+
+//主要两个事情，一个就是存储有效数据到接收队列，还有一个就是唤醒等待队列中的进程
 int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 			const struct tcphdr *th, unsigned int len)
 {
@@ -5217,7 +5222,7 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 
 				/* Bulk data transfer: receiver */
 				eaten = tcp_queue_rcv(sk, skb, tcp_header_len,
-						      &fragstolen);
+						      &fragstolen);                         //接收数据放到队列中，也就是放到对应socket中的sock中的接收队列中
 			}
 
 			tcp_event_data_recv(sk, skb);
@@ -5240,6 +5245,8 @@ no_ack:
 #endif
 			if (eaten)
 				kfree_skb_partial(skb, fragstolen);
+			
+			//数据准备好，唤醒socket上等待的用户进程
 			sk->sk_data_ready(sk, 0);
 			return 0;
 		}

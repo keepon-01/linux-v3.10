@@ -351,7 +351,7 @@ lookup_protocol:
 	WARN_ON(answer_prot->slab == NULL);
 
 	err = -ENOBUFS;
-	sk = sk_alloc(net, PF_INET, GFP_KERNEL, answer_prot);
+	sk = sk_alloc(net, PF_INET, GFP_KERNEL, answer_prot); //把tcp_prot赋给sk的prot字段
 	if (sk == NULL)
 		goto out;
 
@@ -801,7 +801,7 @@ int inet_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 	sock_rps_record_flow(sk);
 
 	err = sk->sk_prot->recvmsg(iocb, sk, msg, size, flags & MSG_DONTWAIT,
-				   flags & ~MSG_DONTWAIT, &addr_len);
+				   flags & ~MSG_DONTWAIT, &addr_len);//比如这里执行的是tcp_recvmsg
 	if (err >= 0)
 		msg->msg_namelen = addr_len;
 	return err;
@@ -1695,6 +1695,13 @@ static struct packet_type ip_packet_type __read_mostly = {
 	.func = ip_rcv,
 };
 
+/**
+ * @brief 初始化网络协议栈
+ *
+ * 此函数负责初始化网络协议栈，包括TCP、UDP、ICMP、IGMP等协议的注册，以及ARP和IP模块的设置。
+ *
+ * @return 成功时返回0，失败时返回错误码。
+ */
 static int __init inet_init(void)
 {
 	struct inet_protosw *q;

@@ -2096,6 +2096,7 @@ int netif_get_num_default_rss_queues(void)
 }
 EXPORT_SYMBOL(netif_get_num_default_rss_queues);
 
+//把发送队列中写到softnet_data的output_queue_tailp中，在后续软中断处理的时候用
 static inline void __netif_reschedule(struct Qdisc *q)
 {
 	struct softnet_data *sd;
@@ -2104,8 +2105,17 @@ static inline void __netif_reschedule(struct Qdisc *q)
 	local_irq_save(flags);
 	sd = &__get_cpu_var(softnet_data);
 	q->next_sched = NULL;
-	*sd->output_queue_tailp = q;
-	sd->output_queue_tailp = &q->next_sched;
+
+	// output_queue_tailp 是 指向指针的指针（struct Qdisc **）。
+	// *sd->output_queue_tailp = q;   （*sd->output_queue_tailp 解引用，得到 struct Qdisc *，然后把 q 赋值给它。）
+	// → 把 q 放入队列的最后。
+	// sd->output_queue_tailp = &q->next_sched;
+	// → 更新 output_queue_tailp，指向 q->next_sched，以便后续添加元素。
+	// 这个操作 维护了一个单向链表结构，用于存储网络队列的调度信息。
+	// 这段代码的核心思想是用 output_queue_tailp 作为一个指针游标，动态维护一个 FIFO 结构的队列。
+
+	*sd->output_queue_tailp = q;  //等号两边最终是两个一级指针
+	sd->output_queue_tailp = &q->next_sched; //等号两边最终是两个二级指针
 	raise_softirq_irqoff(NET_TX_SOFTIRQ);
 	local_irq_restore(flags);
 }
@@ -2675,7 +2685,9 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
 		kfree_skb(skb);
 		rc = NET_XMIT_DROP;
-	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
+	} 
+	//如果可以绕开排队系统
+	else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
 		   qdisc_run_begin(q)) {
 		/*
 		 * This is a work-conserving queue; there are no old skbs
@@ -2697,14 +2709,18 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 			qdisc_run_end(q);
 
 		rc = NET_XMIT_SUCCESS;
-	} else {
+	} 
+	//正常排队，也就是调用q->enqueue把skb添加到队列中，然后调用__qdisc_run开始发送
+	else {
 		skb_dst_force(skb);
+		//入队
 		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
 		if (qdisc_run_begin(q)) {
 			if (unlikely(contended)) {
 				spin_unlock(&q->busylock);
 				contended = false;
 			}
+			//开始发送
 			__qdisc_run(q);
 		}
 	}
@@ -2775,6 +2791,7 @@ EXPORT_SYMBOL(dev_loopback_xmit);
  *      the BH enable code must have IRQs enabled so that it will not deadlock.
  *          --BLG
  */
+//这个方法是从邻居子系统到网络设备子系统的第一个方法，首先要做的事情就是选择发送队列
 int dev_queue_xmit(struct sk_buff *skb)
 {
 	struct net_device *dev = skb->dev;
@@ -2791,18 +2808,23 @@ int dev_queue_xmit(struct sk_buff *skb)
 
 	skb_update_prio(skb);
 
+	//选择发送队列
 	txq = netdev_pick_tx(dev, skb);
+	//获取与此队列关联的排队规则
 	q = rcu_dereference_bh(txq->qdisc);
 
 #ifdef CONFIG_NET_CLS_ACT
 	skb->tc_verd = SET_TC_AT(skb->tc_verd, AT_EGRESS);
 #endif
 	trace_net_dev_queue(skb);
+
+	//如果有队列，则调用_dev_xmit_skb继续处理数据
 	if (q->enqueue) {
 		rc = __dev_xmit_skb(skb, q, dev, txq);
 		goto out;
 	}
 
+	//没有队列的是回环设备和隧道设备
 	/* The device has no queue. Common case for software devices:
 	   loopback, all the sorts of tunnels...
 
@@ -3211,8 +3233,10 @@ int netif_rx_ni(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(netif_rx_ni);
 
+//这是发送过程中的软中断处理函数
 static void net_tx_action(struct softirq_action *h)
-{
+{	
+	//通过softnet_data结构体获取发送队列
 	struct softnet_data *sd = &__get_cpu_var(softnet_data);
 
 	if (sd->completion_queue) {
@@ -3233,15 +3257,18 @@ static void net_tx_action(struct softirq_action *h)
 		}
 	}
 
+	//如果output queue上有qdisc
 	if (sd->output_queue) {
 		struct Qdisc *head;
 
 		local_irq_disable();
+		//将head执行第一个qdisc
 		head = sd->output_queue;
 		sd->output_queue = NULL;
 		sd->output_queue_tailp = &sd->output_queue;
 		local_irq_enable();
 
+		//遍历qdsics列表
 		while (head) {
 			struct Qdisc *q = head;
 			spinlock_t *root_lock;
@@ -3253,6 +3280,7 @@ static void net_tx_action(struct softirq_action *h)
 				smp_mb__before_clear_bit();
 				clear_bit(__QDISC_STATE_SCHED,
 					  &q->state);
+				//发送数据
 				qdisc_run(q);
 				spin_unlock(root_lock);
 			} else {
@@ -3591,6 +3619,17 @@ static int __netif_receive_skb(struct sk_buff *skb)
  *	Return values (usually ignored):
  *	NET_RX_SUCCESS: no congestion
  *	NET_RX_DROP: packet was dropped
+ */
+/**
+ * @brief 接收网络数据包
+ *
+ * 接收一个网络数据包，并对其进行处理。
+ *
+ * @param skb 要接收的数据包指针
+ *
+ * @return 处理结果
+ *         - NET_RX_SUCCESS: 数据包被成功接收
+ *         - 其他返回值: 表示处理失败或需要进一步处理
  */
 int netif_receive_skb(struct sk_buff *skb)
 {
@@ -6323,8 +6362,19 @@ static int __init net_dev_init(void)
 	if (register_pernet_device(&default_device_ops))
 		goto out;
 
+	//两种类型的软中断进行注册，一种是处理接收包的，一种是处理发送包的。可能都是ksoftirqd进程处理的
 	open_softirq(NET_TX_SOFTIRQ, net_tx_action);
 	open_softirq(NET_RX_SOFTIRQ, net_rx_action);
+
+	// 软中断（SoftIRQ）是 Linux 内核的异步中断处理机制，用于处理高吞吐量、低延迟的任务（如网络、定时器、块设备）。
+	// 软中断不会被进程直接调用，而是由内核在特定情况下触发。
+	// 软中断触发后不会立即执行，而是等待 do_softirq() 调度，如果负载高，则由 ksoftirqd 线程执行。    //here
+	// 软中断和硬中断的主要区别在于：软中断不是由硬件直接触发，而是内核调度执行的。
+	// 软中断的调度和通知机制基于硬件中断触发 raise_softirq()，然后 do_softirq() 处理挂起的任务。
+
+	//软中断的注册：open_softirq()
+	//软中断的触发：raise_softirq()  但触发软中断 并不会立刻执行，只是设置一个标志，稍后内核会安排执行。
+	//软中断的处理：do_softirq()
 
 	hotcpu_notifier(dev_cpu_callback, 0);
 	dst_init();

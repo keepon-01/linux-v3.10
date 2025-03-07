@@ -105,7 +105,7 @@ struct socket {
 	socket_state		state;
 
 	kmemcheck_bitfield_begin(type);
-	short			type;
+	short			type;  //如TCP，UDP, raw socket等
 	kmemcheck_bitfield_end(type);
 
 	unsigned long		flags;
@@ -113,8 +113,8 @@ struct socket {
 	struct socket_wq __rcu	*wq;
 
 	struct file		*file;
-	struct sock		*sk;
-	const struct proto_ops	*ops;
+	struct sock		*sk;  //与具体网络协议无关的内部套接字表示方式
+	const struct proto_ops	*ops; //特定协议的套接字操作
 };
 
 struct vm_area_struct;

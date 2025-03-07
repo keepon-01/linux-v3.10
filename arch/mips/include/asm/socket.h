@@ -26,6 +26,8 @@
  * @SOCK_PACKET - linux specific way of getting packets at the dev level.
  *		  For writing rarp and other similar things on the user level.
  */
+
+//这里就指明了socket的类型，也就是说socket适用于多种类型，但是sock中的#define sk_state		__sk_common.skc_state只是适用于TCP协议
 enum sock_type {
 	SOCK_DGRAM	= 1,
 	SOCK_STREAM	= 2,

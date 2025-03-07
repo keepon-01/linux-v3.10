@@ -464,6 +464,7 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 	u32 hash_val;
 	int key_len = tbl->key_len;
 	int error;
+	//申请邻居表项
 	struct neighbour *n1, *rc, *n = neigh_alloc(tbl, dev);
 	struct neigh_hash_table *nht;
 
@@ -472,6 +473,7 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 		goto out;
 	}
 
+	//构造赋值
 	memcpy(n->primary_key, pkey, key_len);
 	n->dev = dev;
 	dev_hold(dev);
@@ -529,6 +531,8 @@ struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
 	n->dead = 0;
 	if (want_ref)
 		neigh_hold(n);
+	
+	//最后添加到邻居的哈希表中，方便后续的查找
 	rcu_assign_pointer(n->next,
 			   rcu_dereference_protected(nht->hash_buckets[hash_val],
 						     lockdep_is_held(&tbl->lock)));
@@ -1289,6 +1293,7 @@ int neigh_resolve_output(struct neighbour *neigh, struct sk_buff *skb)
 	if (!dst)
 		goto discard;
 
+		//注意：： 这里可能触发arp请求
 	if (!neigh_event_send(neigh, skb)) {
 		int err;
 		struct net_device *dev = neigh->dev;
@@ -1300,11 +1305,14 @@ int neigh_resolve_output(struct neighbour *neigh, struct sk_buff *skb)
 		do {
 			__skb_pull(skb, skb_network_offset(skb));
 			seq = read_seqbegin(&neigh->ha_lock);
+
+			//neigh->ha是邻居的mac地址
 			err = dev_hard_header(skb, dev, ntohs(skb->protocol),
 					      neigh->ha, NULL, skb->len);
 		} while (read_seqretry(&neigh->ha_lock, seq));
 
-		if (err >= 0)
+		if (err >= 0)	
+			//当获取到硬件Mac地址以后，就可以封装skb的mac头部，最后就可以通过调用dev_queue_xmit传递到Linux网络设备子系统，即邻居子系统的下一层。
 			rc = dev_queue_xmit(skb);
 		else
 			goto out_kfree_skb;

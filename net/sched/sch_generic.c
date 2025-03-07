@@ -121,6 +121,7 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 
 	HARD_TX_LOCK(dev, txq, smp_processor_id());
 	if (!netif_xmit_frozen_or_stopped(txq))
+		//调用驱动程序来发送程序
 		ret = dev_hard_start_xmit(skb, dev, txq);
 
 	HARD_TX_UNLOCK(dev, txq);
@@ -175,6 +176,7 @@ static inline int qdisc_restart(struct Qdisc *q)
 	struct sk_buff *skb;
 
 	/* Dequeue packet */
+	//从qdisc中取出skb，并返回该skb
 	skb = dequeue_skb(q);
 	if (unlikely(!skb))
 		return 0;
@@ -190,13 +192,20 @@ void __qdisc_run(struct Qdisc *q)
 {
 	int quota = weight_p;
 
+	//循环从队列中取出一个skb并发送
 	while (qdisc_restart(q)) {
 		/*
 		 * Ordered by possible occurrence: Postpone processing if
 		 * 1. we've exceeded packet quota
 		 * 2. another process needs the CPU;
 		 */
+		//如果发生下面的情况之一，则咽喉处理
+		//1. quota用尽
+		//2. 其他进程需要CPU
 		if (--quota <= 0 || need_resched()) {
+			//这里将触发一次NET_TX_SOFTITRQ类型的softirq，
+			//所以这里也是一个服务器上查看/proc/softirqs，一般NET_RX都要逼NET_TX大得多原因之一
+			//对于接收来说，都要经过NET_RX软中断，而对于发送来说，只有系统配额用尽才让软中断上
 			__netif_schedule(q);
 			break;
 		}

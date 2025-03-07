@@ -35,6 +35,16 @@ const struct net_offload __rcu *inet_offloads[MAX_INET_PROTOS] __read_mostly;
  *	Add a protocol handler to the hash tables
  */
 
+/**
+ * @brief 添加网络协议
+ *
+ * 将指定的网络协议注册到内核中。
+ *
+ * @param prot 指向要注册的网络协议结构的指针
+ * @param protocol 要注册的协议号
+ *
+ * @return 如果注册成功，返回0；如果协议不支持命名空间，返回-EINVAL；如果协议已存在，返回-1
+ */
 int inet_add_protocol(const struct net_protocol *prot, unsigned char protocol)
 {
 	if (!prot->netns_ok) {

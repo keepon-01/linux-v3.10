@@ -42,6 +42,7 @@
 #define NF_VERDICT_BITS 16
 #endif
 
+//根据这个来决定调用时机，那么需要看调用他的如何根据他们来决定的调用时机
 enum nf_inet_hooks {
 	NF_INET_PRE_ROUTING,
 	NF_INET_LOCAL_IN,
