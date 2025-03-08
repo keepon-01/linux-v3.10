@@ -2520,9 +2520,11 @@ static inline int skb_needs_linearize(struct sk_buff *skb,
 				!(features & NETIF_F_SG)));
 }
 
+//无论对于用户进程的内核态，还是对于软中断上下文，都会调用这个网络设备子系统中的dev_hard_start_xmit函数,在这个函数中，会调用网卡驱动的xmit函数。（igb_xmit_frame）
 int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 			struct netdev_queue *txq)
-{
+{	
+	//获取设备的回调函数集合 ops
 	const struct net_device_ops *ops = dev->netdev_ops;
 	int rc = NETDEV_TX_OK;
 	unsigned int skb_len;
@@ -2537,6 +2539,7 @@ int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 		if (dev->priv_flags & IFF_XMIT_DST_RELEASE)
 			skb_dst_drop(skb);
 
+		//获取设备支持的功能列表
 		features = netif_skb_features(skb);
 
 		if (vlan_tx_tag_present(skb) &&
@@ -2605,7 +2608,8 @@ gso:
 			dev_queue_xmit_nit(nskb, dev);
 
 		skb_len = nskb->len;
-		rc = ops->ndo_start_xmit(nskb, dev);
+		//调用驱动里的ops里的发送回调函数ndo_start_xmit函数将数据包唱诶网卡设备
+		rc = ops->ndo_start_xmit(nskb, dev);//net_device结构体中的ops中的ndo_start_xmit函数指针实际注册的是igb_xmit_frame函数
 		trace_net_dev_xmit(nskb, rc, dev, skb_len);
 		if (unlikely(rc != NETDEV_TX_OK)) {
 			if (rc & ~NETDEV_TX_MASK)
@@ -2893,6 +2897,8 @@ int netdev_budget __read_mostly = 300;
 int weight_p __read_mostly = 64;            /* old backlog weight */
 
 /* Called with irq disabled */
+//发送数据结束之后，也会执行这里，这里就是硬中断触发软中断的源码
+//这里有个很有意思的细节，无论是硬中断是因为有数据接收，还是发送完成通知，从硬中断触发的软中断都是NET_RX_SOFTIRQ，这就是软中断统计的RX高于TX的原因
 static inline void ____napi_schedule(struct softnet_data *sd,
 				     struct napi_struct *napi)
 {

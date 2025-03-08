@@ -302,7 +302,7 @@ enum e1000_ring_flags_t {
 #define IGB_RX_DESC(R, i)	\
 	(&(((union e1000_adv_rx_desc *)((R)->desc))[i]))
 #define IGB_TX_DESC(R, i)	\
-	(&(((union e1000_adv_tx_desc *)((R)->desc))[i]))
+	(&(((union e1000_adv_tx_desc *)((R)->desc))[i]))    //e1000_adv_tx_desc是网卡使用的描述符，也就是网卡使用的bd数组的元素
 #define IGB_TX_CTXTDESC(R, i)	\
 	(&(((struct e1000_adv_tx_context_desc *)((R)->desc))[i]))
 

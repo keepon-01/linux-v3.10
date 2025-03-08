@@ -851,6 +851,13 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	//是因为skb在后续在调用网络层，最后达到网卡发送完成的时候，这个skb会释放，
 	//而我们知道tcp协议是支持丢失重传的，在收到对方的ACK之前，这个skb是不会被释放的。
 	//所以内核的做法就是每次调用网卡发送的时候，实际就是传递出去的skb的一个拷贝，等收到ACK才真正删除。
+
+	//当调用skb_clone()时，会创建一个新的skb结构，但数据缓冲区是共享的，引用计数增加，这就是浅拷贝。
+	//而skb_copy()会创建深拷贝，复制数据和元数据，适用于需要修改数据的情况。
+
+	//在Linux内核协议栈中，传输层（如TCP）为了实现重传机制而拷贝的skb（socket buffer）本质上是浅拷贝，但内核通过特殊的优化机制实现了类似"半深拷贝"的行为
+	//写时复制（Copy-on-Write）：若克隆后的skb需要修改数据内容（如TCP重传时调整序列号）内核会自动分离数据缓冲区（此时才真正复制数据）
+	//另一种情况：若需要修改数据（如MTU变化导致分片），触发COW复制数据区
 	if (likely(clone_it)) {
 		const struct sk_buff *fclone = skb + 1;
 

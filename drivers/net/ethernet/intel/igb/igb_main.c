@@ -1901,7 +1901,7 @@ static int igb_set_features(struct net_device *netdev,
 static const struct net_device_ops igb_netdev_ops = {
 	.ndo_open		= igb_open,
 	.ndo_stop		= igb_close,
-	.ndo_start_xmit		= igb_xmit_frame,
+	.ndo_start_xmit		= igb_xmit_frame,   //这里注册着net_device结构体中的ops中的ndo_start_xmit函数指针
 	.ndo_get_stats64	= igb_get_stats64,
 	.ndo_set_rx_mode	= igb_set_rx_mode,
 	.ndo_set_mac_address	= igb_set_mac,
@@ -4489,6 +4489,7 @@ static void igb_tx_map(struct igb_ring *tx_ring,
 	u32 cmd_type = igb_tx_cmd_type(skb, tx_flags);
 	u16 i = tx_ring->next_to_use;
 
+	//获取下一个可用描述符指针
 	tx_desc = IGB_TX_DESC(tx_ring, i);
 
 	igb_tx_olinfo_status(tx_ring, tx_desc, tx_flags, skb->len - hdr_len);
@@ -4496,10 +4497,12 @@ static void igb_tx_map(struct igb_ring *tx_ring,
 	size = skb_headlen(skb);
 	data_len = skb->data_len;
 
+	//为sbk->data构造内存映射，以允许设备通过DMA从RAM中读取数据
 	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
 
 	tx_buffer = first;
 
+	//遍历该数据包的所有分片，为skb的每个分片生成有效的映射
 	for (frag = &skb_shinfo(skb)->frags[0];; frag++) {
 		if (dma_mapping_error(tx_ring->dev, dma))
 			goto dma_error;
@@ -4550,6 +4553,7 @@ static void igb_tx_map(struct igb_ring *tx_ring,
 		tx_buffer = &tx_ring->tx_buffer_info[i];
 	}
 
+	//设置最后一个描述符的cmd_type字段，以指示这是一个最后的描述符
 	/* write last descriptor with RS and EOP bits */
 	cmd_type |= size | IGB_TXD_DCMD;
 	tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
@@ -4601,6 +4605,8 @@ dma_error:
 	}
 
 	tx_ring->next_to_use = i;
+
+	//当所有需要的描述符都已经建好，且skb的所有数据都映射到DMA地址后，驱动就会进入到它的最后一步，触发真实的发送
 }
 
 static int __igb_maybe_stop_tx(struct igb_ring *tx_ring, const u16 size)
@@ -4668,6 +4674,9 @@ netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
 	}
 
 	/* record the location of the first descriptor for this packet */
+	//ringbuffer实际包括两个：内核使用的指针数组    网卡使用的bd数组
+	//而下面几行这里是将skb的指针记录到ringbuffer的 内核使用的指针的数组 中，以便后续使用。
+	//获取Tx Queue的下一个可用的可用缓冲区信息
 	first = &tx_ring->tx_buffer_info[tx_ring->next_to_use];
 	first->skb = skb;
 	first->bytecount = skb->len;
@@ -4704,6 +4713,8 @@ netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
 	else if (!tso)
 		igb_tx_csum(tx_ring, first);
 
+	//准备给设备发送的数据，也就是将skb数据映射到网卡可以访问的内存DMA区域
+	//我认为实际就是把skb也关联到ringbuffer的网卡使用的bd数组中，以便后续网卡可以直接访问skb的数据
 	igb_tx_map(tx_ring, first, hdr_len);
 
 	/* Make sure there is space in the ring for the next send. */
@@ -4753,6 +4764,7 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb,
 		skb_set_tail_pointer(skb, 17);
 	}
 
+	//最终实际执行这里
 	return igb_xmit_frame_ring(skb, igb_tx_queue_mapping(adapter, skb));
 }
 
@@ -5993,6 +6005,8 @@ static int igb_poll(struct napi_struct *napi, int budget)
  *
  *  returns true if ring is completely cleaned
  **/
+//总结：发送数据包之后，清理工作无非是清理skb，tx_buffer至为空指针，解除DMA映射，执行之后，传输才算是基本完成
+//为什么还没算完全完成，因为传输层还需要保证可靠性，所以skb其实还没有删除，他得等到收到对方的ACK之后才会真正的清除，那个时候才算彻底发送完毕
 static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
 {
 	struct igb_adapter *adapter = q_vector->adapter;
@@ -6032,6 +6046,7 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
 		total_packets += tx_buffer->gso_segs;
 
 		/* free the skb */
+		//释放skb
 		dev_kfree_skb_any(tx_buffer->skb);
 
 		/* unmap skb header data */
@@ -6041,10 +6056,12 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
 				 DMA_TO_DEVICE);
 
 		/* clear tx_buffer data */
+		//清除tx_buffer数据，也就是ringbuffer相关的 内核使用的指针数组
 		tx_buffer->skb = NULL;
 		dma_unmap_len_set(tx_buffer, len, 0);
 
 		/* clear last DMA location and unmap remaining buffers */
+		//清除最后的DMA位置，解除映射， 也就是ringbuffer相关的 网卡使用的bd数组
 		while (tx_desc != eop_desc) {
 			tx_buffer++;
 			tx_desc++;
