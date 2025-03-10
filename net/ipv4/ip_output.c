@@ -226,6 +226,9 @@ static inline int ip_skb_dst_mtu(struct sk_buff *skb)
 	       skb_dst(skb)->dev->mtu : dst_mtu(skb_dst(skb));
 }
 
+//所以可以知道的是大于MTU的数据包进行分片是发生在网络层的
+//本地的（127.0.0.1）IO和跨机网络的IO一样，最终都会经过这个ip_finish_output函数,然后进入邻居子系统的入口函数dst_neigh_output
+//本地IO也是需要分片，但是为了尽量避免分片，所以IO虚拟网卡的MTU比Ethernet的MTU大很多，物理网卡的MTU是1500，而虚拟网卡的MTU是65535
 static int ip_finish_output(struct sk_buff *skb)
 {
 #if defined(CONFIG_NETFILTER) && defined(CONFIG_XFRM)

@@ -2041,6 +2041,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 		goto make_route;
 	}
 
+	//这里进行路由表的查询，会有两个表可以查询，一个是主表，一个是本地表
 	if (fib_lookup(net, fl4, &res)) {
 		res.fi = NULL;
 		res.table = NULL;
@@ -2073,6 +2074,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 		goto out;
 	}
 
+	//如果是本地路由，比如目的地是127.0.0.1，就会执行下面的逻辑
 	if (res.type == RTN_LOCAL) {
 		if (!fl4->saddr) {
 			if (res.fi->fib_prefsrc)
@@ -2080,7 +2082,7 @@ struct rtable *__ip_route_output_key(struct net *net, struct flowi4 *fl4)
 			else
 				fl4->saddr = fl4->daddr;
 		}
-		dev_out = net->loopback_dev;
+		dev_out = net->loopback_dev;    //对于本地网络的请求，设备将全部使用net->loopback_dev设备,也就是虚拟网卡
 		fl4->flowi4_oif = dev_out->ifindex;
 		flags |= RTCF_LOCAL;
 		goto make_route;

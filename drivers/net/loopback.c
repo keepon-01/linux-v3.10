@@ -75,6 +75,8 @@ static netdev_tx_t loopback_xmit(struct sk_buff *skb,
 	struct pcpu_lstats *lb_stats;
 	int len;
 
+	//剥离掉和原socket的联系
+	//在虚拟网卡传输过程中，skb_orphan的核心作用是隔离数据包（skb）与原始上下文（如用户态socket）的所有权，确保虚拟化环境中的安全传输。
 	skb_orphan(skb);
 
 	/* Before queueing this packet to netif_rx(),
@@ -88,6 +90,7 @@ static netdev_tx_t loopback_xmit(struct sk_buff *skb,
 	lb_stats = this_cpu_ptr(dev->lstats);
 
 	len = skb->len;
+	//调用netif_rx函数，最终执行到enqueue_to_backlog函数
 	if (likely(netif_rx(skb) == NET_RX_SUCCESS)) {
 		u64_stats_update_begin(&lb_stats->syncp);
 		lb_stats->bytes += len;
@@ -96,6 +99,9 @@ static netdev_tx_t loopback_xmit(struct sk_buff *skb,
 	}
 
 	return NETDEV_TX_OK;
+	
+	//注意一点的是：在本机网络IO发送的过程中，传输层下面的skb就不需要释放了，直接接收方传输过去就可以了，总算是省了一点点的开销
+	//不过可惜的是传输层的skb同样节约不了，还是要频繁的申请和释放
 }
 
 static struct rtnl_link_stats64 *loopback_get_stats64(struct net_device *dev,
@@ -152,7 +158,7 @@ static void loopback_dev_free(struct net_device *dev)
 
 static const struct net_device_ops loopback_ops = {
 	.ndo_init      = loopback_dev_init,
-	.ndo_start_xmit= loopback_xmit,
+	.ndo_start_xmit= loopback_xmit,   //虚拟网卡的发送函数
 	.ndo_get_stats64 = loopback_get_stats64,
 };
 

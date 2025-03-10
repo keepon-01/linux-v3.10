@@ -216,19 +216,26 @@ static inline struct fib_table *fib_new_table(struct net *net, u32 id)
 	return fib_get_table(net, id);
 }
 
+//在发送过程中的，网络入口函数ip_queue_xmit中，最终是调用fib_lookup函数查找路由表。
 static inline int fib_lookup(struct net *net, const struct flowi4 *flp,
 			     struct fib_result *res)
 {
 	struct fib_table *table;
 
+	//先查询local路由表，注意，对于127.0.0.1的包，会直接走local路由表。而如果目的地址是本机IP地址，也会走local路由表。
+	//所以应该概括为是本地网络的包，都会走local路由表。所以两种类型的包的性能是一样的，都走的一样的函数
 	table = fib_get_table(net, RT_TABLE_LOCAL);
 	if (!fib_table_lookup(table, flp, res, FIB_LOOKUP_NOREF))
 		return 0;
 
+	//如果local路由表找不到，则查询main路由表。
 	table = fib_get_table(net, RT_TABLE_MAIN);
 	if (!fib_table_lookup(table, flp, res, FIB_LOOKUP_NOREF))
 		return 0;
 	return -ENETUNREACH;
+
+	//注意对于目的是127.0.0.1的包，会直接走local路由表，在local表里就可以找到。
+	//本函数fib_lookup的工作完成后，返回_ip_route_output_key函数继续执行
 }
 
 #else /* CONFIG_IP_MULTIPLE_TABLES */

@@ -1182,9 +1182,16 @@ static int igb_alloc_q_vector(struct igb_adapter *adapter,
 	if (!q_vector)
 		return -ENOMEM;
 
+	//  NAPI 主要采用 中断 + 轮询（polling） 的混合模式来优化网络数据包处理：
+	// 开始时，仍然使用中断（IRQ）：当网卡接收到数据包时，它会触发一次中断，通知 CPU 来处理数据包。
+	// 进入 NAPI 轮询模式：
+	// 关闭进一步的中断。
+	// 让 CPU 在软中断（softirq） 中主动轮询（polling） 网卡队列，批量处理数据包。
+	// 数据处理完成后，恢复中断：
+	// 如果网卡队列中已经没有数据包了，就重新打开中断，等待下次触发。
 	/* initialize NAPI */
 	netif_napi_add(adapter->netdev, &q_vector->napi,
-		       igb_poll, 64);
+		       igb_poll, 64);    //这里是对于真实的网卡，将igb_poll函数赋值为poll，而不赋值的话默认是process_backlog, 默认的用于虚拟网卡
 
 	/* tie q_vector and adapter together */
 	adapter->q_vector[v_idx] = q_vector;

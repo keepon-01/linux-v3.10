@@ -1782,13 +1782,24 @@ static inline int unregister_gifconf(unsigned int family)
 /*
  * Incoming packets are placed on per-cpu queues
  */
-//为每个CPU初始化softnet_data结构体
+//为每个CPU初始化softnet_data结构体，softnet_data 结构体是 Linux 内核网络子系统中用于管理 per-CPU 网络数据包处理 的关键结构。
+
+// input_pkt_queue 存放新到达的数据包，但它不会被立即处理，而是等待软中断调度。
+// 当软中断触发时，net_rx_action() 先把 input_pkt_queue 的数据移动到 process_queue，然后再逐个交给协议栈处理。
+// process_queue 只是一个临时队列，当 input_pkt_queue 为空时，它也会被清空。
+
+
+//典型操作：
+// net_rx_action() 执行时，数据包会从 input_pkt_queue 转移到 process_queue。
+// process_queue 只存放当前处理的队列，避免与 input_pkt_queue 争用锁，提高性能。
+// 处理完毕后，process_queue 置空，等待新的数据包。
+
 struct softnet_data {
 	struct Qdisc		*output_queue;
 	struct Qdisc		**output_queue_tailp;
 	struct list_head	poll_list;
 	struct sk_buff		*completion_queue;
-	struct sk_buff_head	process_queue;
+	struct sk_buff_head	process_queue;      //进入NAPI处理时的数据包队列
 
 	/* stats */
 	unsigned int		processed;
@@ -1807,7 +1818,7 @@ struct softnet_data {
 	unsigned int		input_queue_tail;
 #endif
 	unsigned int		dropped;
-	struct sk_buff_head	input_pkt_queue;
+	struct sk_buff_head	input_pkt_queue;  //进入NAPI轮询模式前的输入队列
 	struct napi_struct	backlog;
 };
 

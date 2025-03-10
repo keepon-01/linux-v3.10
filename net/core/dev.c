@@ -2609,7 +2609,9 @@ gso:
 
 		skb_len = nskb->len;
 		//调用驱动里的ops里的发送回调函数ndo_start_xmit函数将数据包唱诶网卡设备
-		rc = ops->ndo_start_xmit(nskb, dev);//net_device结构体中的ops中的ndo_start_xmit函数指针实际注册的是igb_xmit_frame函数
+		//net_device结构体中的ops中的ndo_start_xmit函数指针实际注册的是igb_xmit_frame函数(这个是真实网卡的发送函数)
+		//而对于处理本地网络的虚拟网卡，他的注册函数实际是loopback_xmit函数	
+		rc = ops->ndo_start_xmit(nskb, dev);
 		trace_net_dev_xmit(nskb, rc, dev, skb_len);
 		if (unlikely(rc != NETDEV_TX_OK)) {
 			if (rc & ~NETDEV_TX_MASK)
@@ -2823,7 +2825,7 @@ int dev_queue_xmit(struct sk_buff *skb)
 	trace_net_dev_queue(skb);
 
 	//如果有队列，则调用_dev_xmit_skb继续处理数据
-	if (q->enqueue) {
+	if (q->enqueue) { //回环设备这是false, 所以进不去这个循环
 		rc = __dev_xmit_skb(skb, q, dev, txq);
 		goto out;
 	}
@@ -2841,6 +2843,7 @@ int dev_queue_xmit(struct sk_buff *skb)
 	   Check this and shot the lock. It is not prone from deadlocks.
 	   Either shot noqueue qdisc, it is even simpler 8)
 	 */
+	//开始为回环设备处理
 	if (dev->flags & IFF_UP) {
 		int cpu = smp_processor_id(); /* ok because BHs are off */
 
@@ -3131,6 +3134,13 @@ static int rps_ipi_queued(struct softnet_data *sd)
  * enqueue_to_backlog is called to queue an skb to a per CPU backlog
  * queue (may be a remote CPU queue).
  */
+
+//  enqueue_to_backlog 主要用于 Linux 内核网络子系统中，它的作用是将数据包放入 backlog 队列，以便后续处理。虽然在虚拟网卡（比如 TUN/TAP 设备）发送数据时可能会用到，但它并不仅限于虚拟网卡，也可能在其他场景下使用，例如：
+
+// 软中断处理：当网卡（物理或虚拟）接收数据包但无法立即处理时，enqueue_to_backlog 可能会被调用，将数据包放入 backlog 队列，等待 ksoftirqd 处理。
+// 高流量情况下的拥塞处理：如果 CPU 负载高或者 NetRx SoftIRQ 处理不过来，数据包可能会被暂存到 backlog 队列，避免丢包。
+// XDP（eXpress Data Path）或其他 BPF 相关优化：某些情况下，数据包在 XDP 处理后也可能被放入 backlog 队列。
+
 static int enqueue_to_backlog(struct sk_buff *skb, int cpu,
 			      unsigned int *qtail)
 {
@@ -3141,6 +3151,7 @@ static int enqueue_to_backlog(struct sk_buff *skb, int cpu,
 
 	local_irq_save(flags);
 
+	//把要发送的skb插入到softnet_data的input_pkt_queue队列中，并调用napi_schedule函数来触发软中断
 	rps_lock(sd);
 	if (skb_queue_len(&sd->input_pkt_queue) <= netdev_max_backlog) {
 		if (skb_queue_len(&sd->input_pkt_queue)) {
@@ -3157,7 +3168,7 @@ enqueue:
 		 */
 		if (!__test_and_set_bit(NAPI_STATE_SCHED, &sd->backlog.state)) {
 			if (!rps_ipi_queued(sd))
-				____napi_schedule(sd, &sd->backlog);
+				____napi_schedule(sd, &sd->backlog);  //here
 		}
 		goto enqueue;
 	}
@@ -4049,6 +4060,8 @@ static void net_rps_action_and_irq_enable(struct softnet_data *sd)
 		local_irq_enable();
 }
 
+
+//这个方法是虚拟网卡默认的poll方法
 static int process_backlog(struct napi_struct *napi, int quota)
 {
 	int work = 0;
@@ -4083,8 +4096,12 @@ static int process_backlog(struct napi_struct *napi, int quota)
 		rps_lock(sd);
 		qlen = skb_queue_len(&sd->input_pkt_queue);
 		if (qlen)
+			//用于将链表a链接到链表b上，形成一个新的链表b，并将原来的链表a变成空链表
+			//两种队列
 			skb_queue_splice_tail_init(&sd->input_pkt_queue,
 						   &sd->process_queue);
+			//最后调用_netif_receive_skb将数据包送往协议栈，之后的过程又与跨机网络的IO一致了，
+			//_netif_receive_skb  --->  _netif_receive_skb_core  --->  deliver_skb  , 然后将数据包送入了ip_rcv中   【ip_rcv() 是 IPv4 数据包在协议栈中的入口函数】
 
 		if (qlen < quota - work) {
 			/*
@@ -4158,7 +4175,7 @@ void netif_napi_add(struct net_device *dev, struct napi_struct *napi,
 	napi->gro_count = 0;
 	napi->gro_list = NULL;
 	napi->skb = NULL;
-	napi->poll = poll;
+	napi->poll = poll; 
 	if (weight > NAPI_POLL_WEIGHT)
 		pr_err_once("netif_napi_add() called with weight %d on device %s\n",
 			    weight, dev->name);
@@ -6345,7 +6362,7 @@ static int __init net_dev_init(void)
 		sd->cpu = i;
 #endif
 
-		sd->backlog.poll = process_backlog;
+		sd->backlog.poll = process_backlog;   //初始化的时候默认的处理函数是process_backlog
 		sd->backlog.weight = weight_p;
 		sd->backlog.gro_list = NULL;
 		sd->backlog.gro_count = 0;
