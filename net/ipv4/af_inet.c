@@ -192,6 +192,7 @@ static int inet_autobind(struct sock *sk)
 /*
  *	Move a socket into listening state.
  */
+//listen的最主要的工作就是申请和初始化全连接队列和半连接队列
 int inet_listen(struct socket *sock, int backlog)
 {
 	struct sock *sk = sock->sk;
@@ -211,6 +212,7 @@ int inet_listen(struct socket *sock, int backlog)
 	/* Really, if the socket is already in listen state
 	 * we can only allow the backlog to be adjusted.
 	 */
+	//还不是listen状态的话，（尚未listen过）
 	if (old_state != TCP_LISTEN) {
 		/* Check special setups for testing purpose to enable TFO w/o
 		 * requiring TCP_FASTOPEN sockopt.
@@ -232,10 +234,12 @@ int inet_listen(struct socket *sock, int backlog)
 			if (err)
 				goto out;
 		}
+		//开始监听
 		err = inet_csk_listen_start(sk, backlog);
 		if (err)
 			goto out;
 	}
+	//设置全连接队列长度
 	sk->sk_max_ack_backlog = backlog;
 	err = 0;
 

@@ -93,14 +93,14 @@ extern int sysctl_max_syn_backlog;
  */
 struct listen_sock {
 	u8			max_qlen_log;
-	u8			synflood_warned;
+	u8			synflood_warned;    //是否触发了 SYN flood（SYN 泛洪攻击）警告标志。
 	/* 2 bytes hole, try to use */
 	int			qlen;
 	int			qlen_young;
 	int			clock_hand;
 	u32			hash_rnd;
 	u32			nr_table_entries;
-	struct request_sock	*syn_table[0];
+	struct request_sock	*syn_table[0];//柔性数组，这里是用来当做哈希表来管理，哈希表的本质是数组，使用哈希表的原因：因为服务端需要在第三次握手时快速查找出第一次握手时留存的request_sock对象，所以使用哈希表来进行管理。
 };
 
 /*
@@ -148,11 +148,14 @@ struct fastopen_queue {
  * are always protected from the main sock lock.
  */
 struct request_sock_queue {
+	//全连接队列，即已完成三次握手的连接队列
+	//全连接队列上不需要进行复杂的查找工作，accept处理的时候只是先进先出地接受就好，所以用链表来存储
 	struct request_sock	*rskq_accept_head;
 	struct request_sock	*rskq_accept_tail;
 	rwlock_t		syn_wait_lock;
 	u8			rskq_defer_accept;
 	/* 3 bytes hole, try to pack */
+	//半连接队列
 	struct listen_sock	*listen_opt;
 	struct fastopen_queue	*fastopenq; /* This is non-NULL iff TFO has been
 					     * enabled on this listener. Check

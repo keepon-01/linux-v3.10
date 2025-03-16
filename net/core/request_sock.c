@@ -37,15 +37,32 @@
 int sysctl_max_syn_backlog = 256;
 EXPORT_SYMBOL(sysctl_max_syn_backlog);
 
+//完成request_sock_queue（包括半连接队列和全连接队列）的初始化，主要是分配内存空间，半连接队列的长度计算，全连接队列头的初始化。
 int reqsk_queue_alloc(struct request_sock_queue *queue,
 		      unsigned int nr_table_entries)
 {
 	size_t lopt_size = sizeof(struct listen_sock);
 	struct listen_sock *lopt;
 
+	//计算半连接队列的长度
+	//因为全连接队列是链表，所以不需要提前计算长度，不用于分配空间。
+	//但是全连接队列也是有长度的，他的最大长度listen时传入的backlog和somaxconn之间的最小值
+	//半连接的长度是min（backlog, somaxconn, tcp_max_syn_backlog）+ 1再向上取整到2的N次幂，但最小不能小于16
 	nr_table_entries = min_t(u32, nr_table_entries, sysctl_max_syn_backlog);
 	nr_table_entries = max_t(u32, nr_table_entries, 8);
 	nr_table_entries = roundup_pow_of_two(nr_table_entries + 1);
+
+	//syn_table 是哈希表，哈希表的大小通常是 2 的 N 次幂，这样能提高哈希查找的效率，减少冲突。因此，计算出的 syn_table 长度 需要向上取整到最近的 2^N。
+	//哈希表大小应始终设为 2^N，这样能：
+	// 使用位运算加速计算
+	// 减少哈希冲突
+	// 提高扩展效率
+	// 提高 CPU 缓存命中率
+
+	//假如上限是16， 那么
+	// 如果不启用 SYN Cookie：第 17、18 个 SYN 可能会被丢弃，客户端连接超时。
+	// 如果启用 SYN Cookie（sysctl net.ipv4.tcp_syncookies = 1）：可以继续处理新连接，但会有一些副作用（如失去部分 TCP 队列控制）。
+	//为listen_sock对象分配内存空间
 	lopt_size += nr_table_entries * sizeof(struct request_sock *);
 	if (lopt_size > PAGE_SIZE)
 		lopt = vzalloc(lopt_size);
@@ -60,7 +77,11 @@ int reqsk_queue_alloc(struct request_sock_queue *queue,
 
 	get_random_bytes(&lopt->hash_rnd, sizeof(lopt->hash_rnd));
 	rwlock_init(&queue->syn_wait_lock);
+
+	//全连接队列头的初始化
 	queue->rskq_accept_head = NULL;
+
+	//半连接队列设置
 	lopt->nr_table_entries = nr_table_entries;
 
 	write_lock_bh(&queue->syn_wait_lock);

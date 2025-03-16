@@ -1522,21 +1522,25 @@ SYSCALL_DEFINE3(bind, int, fd, struct sockaddr __user *, umyaddr, int, addrlen)
  *	necessary for a listen, and if that works, we mark the socket as
  *	ready for listening.
  */
-
+//调用listen，使得变成监听的socket
+//将一个已经创建并绑定的socket变成监听socket
 SYSCALL_DEFINE2(listen, int, fd, int, backlog)
 {
 	struct socket *sock;
 	int err, fput_needed;
 	int somaxconn;
 
+	//根据fd查找socket内核对象，fd是服务端的
 	sock = sockfd_lookup_light(fd, &err, &fput_needed);
 	if (sock) {
+		//获取内核参数net.core.somaxconn
 		somaxconn = sock_net(sock->sk)->core.sysctl_somaxconn;
 		if ((unsigned int)backlog > somaxconn)
 			backlog = somaxconn;
 
 		err = security_socket_listen(sock, backlog);
 		if (!err)
+			//调用协议栈注册的listen函数，通过调用sock->ops->listen()进入协议栈的listen函数,inet_listen是协议栈函数
 			err = sock->ops->listen(sock, backlog);
 
 		fput_light(sock->file, fput_needed);
