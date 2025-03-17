@@ -345,7 +345,7 @@ struct sock {
 	atomic_t		sk_wmem_alloc;
 	atomic_t		sk_omem_alloc;
 	int			sk_sndbuf;
-	struct sk_buff_head	sk_write_queue;
+	struct sk_buff_head	sk_write_queue;     //这个队列是发送队列
 	kmemcheck_bitfield_begin(flags);
 	unsigned int		sk_shutdown  : 2,
 				sk_no_check  : 2,

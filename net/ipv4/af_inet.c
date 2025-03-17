@@ -615,7 +615,7 @@ int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 		sock->state = err ? SS_DISCONNECTING : SS_UNCONNECTED;
 		goto out;
 	}
-
+	//刚创建好的socket的状态就是SS_UNCONNECTED
 	switch (sock->state) {
 	default:
 		err = -EINVAL;
@@ -632,7 +632,7 @@ int __inet_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 		if (sk->sk_state != TCP_CLOSE)
 			goto out;
 
-		err = sk->sk_prot->connect(sk, uaddr, addr_len);
+		err = sk->sk_prot->connect(sk, uaddr, addr_len);  //调用tcp_v4_connect
 		if (err < 0)
 			goto out;
 

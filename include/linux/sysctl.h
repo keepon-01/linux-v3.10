@@ -103,6 +103,13 @@ static inline void *proc_sys_poll_event(struct ctl_table_poll *poll)
 #define DEFINE_CTL_TABLE_POLL(name)					\
 	struct ctl_table_poll name = __CTL_TABLE_POLL_INITIALIZER(name)
 
+// ctl_table 是 Linux sysctl 机制的核心数据结构：
+
+// 动态调整内核参数，无需重新编译或重启系统。
+// 映射到 /proc/sys/，用户可以通过 sysctl 命令或 echo 修改参数。
+// 支持权限控制，防止非 root 用户修改关键参数。
+// 使用 proc_handler 处理参数的读/写，确保数据格式正确，支持范围限制。
+// 这使 Linux 网络、内存管理、安全策略等都能在运行时灵活调整，适用于各种不同的使用场景（如服务器优化、调试、实验等）。
 /* A sysctl table is an array of struct ctl_table: */
 struct ctl_table 
 {

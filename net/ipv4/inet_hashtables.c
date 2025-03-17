@@ -322,6 +322,8 @@ static int __inet_check_established(struct inet_timewait_death_row *death_row,
 	struct net *net = sock_net(sk);
 	unsigned int hash = inet_ehashfn(net, daddr, lport,
 					 saddr, inet->inet_dport);
+	//找到哈希桶
+	//这个是所有established状态的socket组成的哈希桶🪣
 	struct inet_ehash_bucket *head = inet_ehash_bucket(hinfo, hash);
 	spinlock_t *lock = inet_ehash_lockp(hinfo, hash);
 	struct sock *sk2;
@@ -332,6 +334,7 @@ static int __inet_check_established(struct inet_timewait_death_row *death_row,
 	spin_lock(lock);
 
 	/* Check TIME-WAIT sockets first. */
+	//遍历是否有有四元组一样的，一样的话就报错
 	sk_nulls_for_each(sk2, node, &head->twchain) {
 		if (sk2->sk_hash != hash)
 			continue;
@@ -381,6 +384,7 @@ unique:
 
 		inet_twsk_put(tw);
 	}
+	//要用了，记录，返回0（成功）
 	return 0;
 
 not_unique:
@@ -481,6 +485,9 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 		int (*hash)(struct sock *sk, struct inet_timewait_sock *twp))
 {
 	struct inet_hashinfo *hinfo = death_row->hashinfo;
+
+	//是否绑定过端口，如果调用过bind, 那么这个函数会选择好端口并设置在inet_sum上，否则为0
+	//如果已经绑定过端口，就直接用这个端口，但是默认一个端口只会被使用一次，不能被多次使用来突破65535的限制了，所以对于客户端角色的socket，不建议使用bind!!
 	const unsigned short snum = inet_sk(sk)->inet_num;
 	struct inet_bind_hashbucket *head;
 	struct inet_bind_bucket *tb;
@@ -494,36 +501,57 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 		u32 offset = hint + port_offset;
 		struct inet_timewait_sock *tw = NULL;
 
+		//获取本地端口范围，如果数字不够用，可以修改net.ipv4.ip_local_port_range 这里面使用到sysctl这个类似于王老师一直说的写到了配置文件中了吗？
 		inet_get_local_port_range(&low, &high);
 		remaining = (high - low) + 1;
 
 		local_bh_disable();
+
+		//遍历查找
+		//利用offset这个随机位置开始遍历循环，如果端口很充足，很容易就可以找到可用端口，便可以推出循环
+		//假如ip_local_port_range中的端口快被用光了，这个时候内核需要循环很多次才能找到可以用的端口，这会导致connect系统调用的CPU开销上涨。!!
 		for (i = 1; i <= remaining; i++) {
 			port = low + (i + offset) % remaining;
+
+			//查看是否时保留端口，是则跳过。是否在net.ipv4.ip_local_reserved_ports中
 			if (inet_is_reserved_local_port(port))
 				continue;
+			//查找和遍历已经使用的端口的哈希链表
 			head = &hinfo->bhash[inet_bhashfn(net, port,
 					hinfo->bhash_size)];
-			spin_lock(&head->lock);
+			spin_lock(&head->lock); 
 
 			/* Does not bother with rcv_saddr checks,
 			 * because the established check is already
 			 * unique enough.
 			 */
 			inet_bind_bucket_for_each(tb, &head->chain) {
+
+				//如果端口已经被使用
 				if (net_eq(ib_net(tb), net) &&
 				    tb->port == port) {
 					if (tb->fastreuse >= 0 ||
 					    tb->fastreuseport >= 0)
 						goto next_port;
 					WARN_ON(hlist_empty(&tb->owners));
+
+					//通过check_established函数检查是否可用
+					//这个函数检查的是现有的TCP连接中是否四元组和要建立的TCP连接四元组完全一致吗，如果不完全一致，仍然可以使用。
+					//例如：客户192.168.0.1:1234 -> 服务器192.168.0.2:5678
+					//客户192.168.0.1:1234 -> 服务器192.168.0.2:5679
+					//这两个连接是可以同时存在的，因为服务器地址不同，所以可以同时存在
+
+					//如果客户端双网卡，双IP，就直接翻倍了。
+
+					//所以一台客户端最大能建立的连接的个数不是65535， 只要服务器足够多， 单机发出百万连接都是没有问题的
 					if (!check_established(death_row, sk,
 								port, &tw))
 						goto ok;
 					goto next_port;
 				}
 			}
-
+			//未使用的话
+			//也即是哈希表中未找到的话，申请一个新的inet_bind_bucket来记录端口的使用，并用哈希表的形式都管理起来
 			tb = inet_bind_bucket_create(hinfo->bind_bucket_cachep,
 					net, head, port);
 			if (!tb) {
@@ -539,6 +567,7 @@ int __inet_hash_connect(struct inet_timewait_death_row *death_row,
 		}
 		local_bh_enable();
 
+		//遍历所有的端口没有找到合适的端口，返回错误，也就是用户程序上遇到的cannot assign requested address错误
 		return -EADDRNOTAVAIL;
 
 ok:

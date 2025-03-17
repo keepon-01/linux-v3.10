@@ -2828,7 +2828,8 @@ void tcp_connect_init(struct sock *sk)
 		tp->rcv_nxt = 0;
 	tp->rcv_wup = tp->rcv_nxt;
 	tp->copied_seq = tp->rcv_nxt;
-
+	
+	//初始化定时器的时候为TCP_TIMEOUT_INIT
 	inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
 	inet_csk(sk)->icsk_retransmits = 0;
 	tcp_clear_retrans(tp);
@@ -2951,6 +2952,7 @@ int tcp_connect(struct sock *sk)
 		return 0;
 	}
 
+	//申请并设置一个skb
 	buff = alloc_skb_fclone(MAX_TCP_HEADER + 15, sk->sk_allocation);
 	if (unlikely(buff == NULL))
 		return -ENOBUFS;
@@ -2960,10 +2962,13 @@ int tcp_connect(struct sock *sk)
 
 	tcp_init_nondata_skb(buff, tp->write_seq++, TCPHDR_SYN);
 	tp->retrans_stamp = TCP_SKB_CB(buff)->when = tcp_time_stamp;
+
+	//添加到发送队列sk_write_queue;这个是sock结构体中的发送队列，和接收队列sk_receive_queue是平等的关系
 	tcp_connect_queue_skb(sk, buff);
 	TCP_ECN_send_syn(sk, buff);
 
 	/* Send off SYN; include data in Fast Open. */
+	//实际发送syn包	
 	err = tp->fastopen_req ? tcp_send_syn_data(sk, buff) :
 	      tcp_transmit_skb(sk, buff, 1, sk->sk_allocation);
 	if (err == -ECONNREFUSED)
@@ -2977,6 +2982,7 @@ int tcp_connect(struct sock *sk)
 	TCP_INC_STATS(sock_net(sk), TCP_MIB_ACTIVEOPENS);
 
 	/* Timer for repeating the SYN until an answer. */
+	//启动重传的定时器
 	inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS,
 				  inet_csk(sk)->icsk_rto, TCP_RTO_MAX);
 	return 0;

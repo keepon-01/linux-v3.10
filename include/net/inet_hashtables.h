@@ -133,7 +133,7 @@ struct inet_hashinfo {
 	/* Ok, let's try this, I give up, we do need a local binding
 	 * TCP hash as well as the others for fast bind/connect.
 	 */
-	struct inet_bind_hashbucket	*bhash;
+	struct inet_bind_hashbucket	*bhash;  //系统维护的所有使用过的端口的哈希表
 
 	unsigned int			bhash_size;
 	/* 4 bytes hole on 64 bit */

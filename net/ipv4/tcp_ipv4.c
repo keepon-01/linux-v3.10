@@ -218,7 +218,10 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	 * lock select source port, enter ourselves into the hash tables and
 	 * complete initialization after this.
 	 */
+	// 设置状态为SYN-SENT，也就是客户端connect的时候，还没发送SYN包之前，状态是SYN-SENT
+	// 所以，客户端 connect() 还没发 SYN 之前，状态已经是 SYN-SENT，是 Linux TCP 实现的一种机制，而不是严格按照 RFC 状态机的字面顺序执行。
 	tcp_set_state(sk, TCP_SYN_SENT);
+	//动态选择一个端口
 	err = inet_hash_connect(&tcp_death_row, sk);
 	if (err)
 		goto failure;
@@ -241,7 +244,8 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 							   usin->sin_port);
 
 	inet->inet_id = tp->write_seq ^ jiffies;
-
+	
+	//函数用来根据sk中的信息，构建一个syn报文，并把该报文发送出去
 	err = tcp_connect(sk);
 
 	rt = NULL;

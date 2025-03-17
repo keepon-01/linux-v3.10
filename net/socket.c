@@ -1524,6 +1524,7 @@ SYSCALL_DEFINE3(bind, int, fd, struct sockaddr __user *, umyaddr, int, addrlen)
  */
 //调用listen，使得变成监听的socket
 //将一个已经创建并绑定的socket变成监听socket
+//listen的主要工作是申请和初始化全连接队列和半连接队列！！！！！！
 SYSCALL_DEFINE2(listen, int, fd, int, backlog)
 {
 	struct socket *sock;
@@ -1658,7 +1659,8 @@ SYSCALL_DEFINE3(accept, int, fd, struct sockaddr __user *, upeer_sockaddr,
  *	other SEQPACKET protocols that take time to connect() as it doesn't
  *	include the -EINPROGRESS status for such sockets.
  */
-
+//客户端上调用Connect函数的时候，会进这个地方
+//connect的主要工作是：客户端在执行connect函数的时候，把本地的socket的状态设置成TCP_SYN_SENT, 选了一个可用的端口，接着发出SYN握手请求的数据包，并启动重传定时器！！！！！！
 SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
 		int, addrlen)
 {
@@ -1666,6 +1668,7 @@ SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
 	struct sockaddr_storage address;
 	int err, fput_needed;
 
+	//根据fd获取socket结构体
 	sock = sockfd_lookup_light(fd, &err, &fput_needed);
 	if (!sock)
 		goto out;
@@ -1678,6 +1681,7 @@ SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
 	if (err)
 		goto out_put;
 
+    //进行connect操作
 	err = sock->ops->connect(sock, (struct sockaddr *)&address, addrlen,
 				 sock->file->f_flags);
 out_put:
