@@ -154,6 +154,7 @@ typedef __u64 __bitwise __addrpair;
  *	This is the minimal network layer representation of sockets, the header
  *	for struct sock and struct inet_timewait_sock.
  */
+//这四个字段（skc_rcv_saddr, skc_daddr, skc_num, skc_dport）构成了 TCP/UDP 连接的 四元组（4-tuple），用于唯一标识一个网络连接或数据流。
 struct sock_common {
 	/* skc_daddr and skc_rcv_saddr must be grouped on a 8 bytes aligned
 	 * address on 64bit arches : cf INET_MATCH() and INET_TW_MATCH()

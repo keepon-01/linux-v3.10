@@ -142,6 +142,26 @@ struct inet_sock {
 	struct ipv6_pinfo	*pinet6;
 #endif
 	/* Socket demultiplex comparisons on incoming packets. */
+//sock_common   ---    sock      ------   inet_sock   结构体不断继承的感觉，后续还有  ----  inet_connection_sock  ---    tcp_sock
+//sock_common 是 sock 结构体中的第一个联合体，用于存储与套接字相关的各种信息。
+//inet_sock 中并没有重复存储四元组，它通过继承 sock_common 来复用存储在 sock_common 中的四元组信息。这种设计避免了冗余存储，提高了内存利用率。
+
+// 假设客户端 192.168.1.100:54321 连接到服务端 10.0.0.1:80：
+// 客户端的socket信息
+// skc_rcv_saddr = 192.168.1.100 (本地IP)
+// skc_num       = 54321          (本地端口)
+// skc_daddr     = 10.0.0.1       (服务端IP)
+// skc_dport     = 80             (服务端端口)
+
+// 服务端的socket信息
+// skc_rcv_saddr = 10.0.0.1       (本地IP)
+// skc_num       = 80             (本地端口)
+// skc_daddr     = 192.168.1.100  (客户端IP)
+// skc_dport     = 54321          (客户端端口)
+
+//四元组必然倒置：客户端和服务端的 socket 四元组是严格对称的，不存在完全相同的值。
+//协议栈强依赖此特性：源目的倒置是 TCP/IP 实现双向通信的基础设计，确保数据包能正确寻址。
+
 #define inet_daddr		sk.__sk_common.skc_daddr
 #define inet_rcv_saddr		sk.__sk_common.skc_rcv_saddr
 #define inet_addrpair		sk.__sk_common.skc_addrpair
