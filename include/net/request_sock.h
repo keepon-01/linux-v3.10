@@ -47,6 +47,8 @@ extern int inet_rtx_syn_ack(struct sock *parent, struct request_sock *req);
 
 /* struct request_sock - mini sock to represent a connection request
  */
+//request_sock结构体是用来表示一个连接请求的，它包含了连接请求的各种信息，比如请求的类型、请求的源地址和端口、请求的窗口大小等
+//它是半连接队列和全连接队列中的基本元素
 struct request_sock {
 	struct request_sock		*dl_next;
 	u16				mss;

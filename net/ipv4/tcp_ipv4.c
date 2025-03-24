@@ -1466,6 +1466,8 @@ static int tcp_v4_conn_req_fastopen(struct sock *sk,
 	return 0;
 }
 
+//服务器端收到syn包会走到这里,服务端响应SYN的主要处理逻辑都在这里
+//服务器响应客户端的ack的主要工作是判断接收队列【半连接队列和全连接队列】是否满了，满的话可能会丢弃该连接请求，否则发出syn-ack包，申请request_sock内核结构体添加到半连接队列中，同时启动定时器
 int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_options_received tmp_opt;
@@ -1491,6 +1493,20 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	 * limitations, they conserve resources and peer is
 	 * evidently real one.
 	 */
+	//看看半连接队列是否满了，
+	//如果满了，且未开启tcp_syncookies，那么直接丢弃。在大流量的情况下，tcp_syncookies可以有效缓解SYN Flood攻击
+
+	// TCP SYN Cookies 是一种防御 SYN Flood 攻击的机制。它的主要作用是：
+	// 防止 SYN Flood 攻击
+	// 当攻击者发送大量 SYN 包但不完成三次握手时，会导致服务器维护大量的半连接状态
+	// 这些未完成的连接会占用服务器资源，最终可能导致服务器无法接受新的连接
+	// SYN Cookies 机制可以在不保存连接状态的情况下完成三次握手
+	// 工作原理：
+	// 当服务器收到 SYN 包时，不再分配连接资源，而是生成一个特殊的序列号(SYN Cookie)
+	// 这个序列号包含了连接信息(如源IP、端口等)的加密哈希值
+	// 服务器发送 SYN+ACK 包时使用这个序列号
+	// 当收到客户端的 ACK 包时，服务器可以通过解密序列号来验证连接的合法性
+
 	if (inet_csk_reqsk_queue_is_full(sk) && !isn) {
 		want_cookie = tcp_syn_flood_action(sk, skb, "TCP");
 		if (!want_cookie)
@@ -1502,11 +1518,16 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	 * clogging syn queue with openreqs with exponentially increasing
 	 * timeout.
 	 */
+	//接着还要判断全连接队列是否满了，因为全连接队列满了也会导致握手异常，那干脆在一次握手的时候也判断了
+	//在全连接队列满的情况下，如果有young_ack， 那么直接丢弃
+
+	//young_ack是半连接队列中维持的一个计数器，记录的是刚有syn到达，没有被syn——ack重传计时器充传过syn-ack,同时也没有完成三次握手的sock数量
 	if (sk_acceptq_is_full(sk) && inet_csk_reqsk_queue_young(sk) > 1) {
 		NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_LISTENOVERFLOWS);
 		goto drop;
 	}
 
+	//分配 request_sock内核结构体
 	req = inet_reqsk_alloc(&tcp_request_sock_ops);
 	if (!req)
 		goto drop;
@@ -1599,6 +1620,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 	 * latter to remove its dependency on the current implementation
 	 * of tcp_v4_send_synack()->tcp_select_initial_window().
 	 */
+	//构造syn-ack包
 	skb_synack = tcp_make_synack(sk, dst, req,
 	    fastopen_cookie_present(&valid_foc) ? &valid_foc : NULL);
 
@@ -1610,6 +1632,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 
 	if (likely(!do_fastopen)) {
 		int err;
+		//发送syn-ack包
 		err = ip_build_and_send_pkt(skb_synack, sk, ireq->loc_addr,
 		     ireq->rmt_addr, ireq->opt);
 		err = net_xmit_eval(err);
@@ -1619,6 +1642,7 @@ int tcp_v4_conn_request(struct sock *sk, struct sk_buff *skb)
 		tcp_rsk(req)->snt_synack = tcp_time_stamp;
 		tcp_rsk(req)->listener = NULL;
 		/* Add the request_sock to the SYN table */
+		//添加到半连接队列，并开启计时器
 		inet_csk_reqsk_queue_hash_add(sk, req, TCP_TIMEOUT_INIT);
 		if (fastopen_cookie_present(&foc) && foc.len != 0)
 			NET_INC_STATS_BH(sock_net(sk),
@@ -1747,6 +1771,7 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 	struct sock *nsk;
 	struct request_sock **prev;
 	/* Find possible connection requests. */
+	//查找listen socket的半连接队列
 	struct request_sock *req = inet_csk_search_req(sk, &prev, th->source,
 						       iph->saddr, iph->daddr);
 	if (req)
@@ -1801,6 +1826,7 @@ static __sum16 tcp_v4_checksum_init(struct sk_buff *skb)
  * This is because we cannot sleep with the original spinlock
  * held.
  */
+//tcp_v4_do_rcv 函数是 TCP/IP 协议栈中的一个核心函数，用于处理接收到的 TCP 数据包。
 int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 {
 	struct sock *rsk;
@@ -1837,6 +1863,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	if (skb->len < tcp_hdrlen(skb) || tcp_checksum_complete(skb))
 		goto csum_err;
 
+	//服务器端收到第一步握手syn或者第三部ack都会走到这里
 	if (sk->sk_state == TCP_LISTEN) {
 		struct sock *nsk = tcp_v4_hnd_req(sk, skb);
 		if (!nsk)

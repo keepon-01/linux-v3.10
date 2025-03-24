@@ -5622,6 +5622,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 		if (th->rst)
 			goto discard;
 
+		//判断是否是syn包
 		if (th->syn) {
 			if (th->fin)
 				goto discard;
