@@ -3054,10 +3054,21 @@ void tcp_send_ack(struct sock *sk)
 	if (sk->sk_state == TCP_CLOSE)
 		return;
 
+	//注意三次握手过程中的报文，也就是非数据报文，控制报文，都是不放在socket的发送队列的，没必要放在里面！
+	//三次握手的报文（SYN、SYN+ACK、ACK）不会放入 socket 的接收队列（receive queue），而是由 TCP 协议栈直接处理，
+	//接收队列（receive queue） 是用于存放 应用层 需要读取的数据，例如 HTTP 响应、文件传输内容等。而 三次握手的报文只是用于 TCP 连接的建立，不属于应用层数据，所以不会放入接收队列。【不要在这里犯迷糊】
+
+	//同时要注意，滑动窗口和socket的接收队列和发送队列什么关系
+	//滑动窗口是协议层的流量控制机制，决定能发送多少数据。
+	//发送队列是待发送数据的缓冲区，发送速率受滑动窗口限制。
+	// 接收队列是已接收数据的缓冲区，其剩余空间决定接收窗口大小，进而控制发送方的速率。
+	// 三者共同作用，在保证可靠性的同时，实现高效、自适应的数据传输。
+
 	/* We are not putting this on the write queue, so
 	 * tcp_transmit_skb() will set the ownership to this
 	 * sock.
 	 */
+	//申请和构造ack数据包
 	buff = alloc_skb(MAX_TCP_HEADER, sk_gfp_atomic(sk, GFP_ATOMIC));
 	if (buff == NULL) {
 		inet_csk_schedule_ack(sk);
@@ -3073,7 +3084,12 @@ void tcp_send_ack(struct sock *sk)
 
 	/* Send it off, this clears delayed acks for us. */
 	TCP_SKB_CB(buff)->when = tcp_time_stamp;
+	//发送出去
 	tcp_transmit_skb(sk, buff, 0, sk_gfp_atomic(sk, GFP_ATOMIC));
+
+
+	//总结：客户端响应来自服务端的syn-ack的时候，清除了connect时候设置的重传计时器，把当前的socket的状态设置成established，同时开启保活计时器后，发出第三次握手的ack确认。
+
 }
 
 /* This routine sends a packet with an out of date sequence

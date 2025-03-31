@@ -3077,6 +3077,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		if (!fully_acked)
 			break;
 
+		//从 TCP 发送队列中移除指定的数据包（sk_buff）的，而这个队列好像就是sock中的队列呢！
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
 		tp->scoreboard_skb_hint = NULL;
@@ -3102,6 +3103,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		}
 
 		tcp_ack_update_rtt(sk, flag, seq_rtt);
+
+		//删除定时器，这个定时器是客户端connect时设置的
 		tcp_rearm_rto(sk);
 
 		if (tcp_is_reno(tp)) {
@@ -5292,11 +5295,13 @@ discard:
 }
 EXPORT_SYMBOL(tcp_rcv_established);
 
+//这个函数是只被客户端调用。
 void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct inet_connection_sock *icsk = inet_csk(sk);
 
+	//修改socket的状态
 	tcp_set_state(sk, TCP_ESTABLISHED);
 
 	if (skb != NULL) {
@@ -5309,6 +5314,7 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 
 	tcp_init_metrics(sk);
 
+	//初始化拥塞控制
 	tcp_init_congestion_control(sk);
 
 	/* Prevent spurious tcp_cwnd_restart() on first data
@@ -5318,6 +5324,9 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 
 	tcp_init_buffer_space(sk);
 
+	//保活计时器打开
+	//TCP 保活计时器（Keepalive Timer） 可以 同时存在于客户端和服务端，但它的启用取决于 哪一方 设置了 SO_KEEPALIVE 选项
+	//当 TCP 连接长时间 没有数据传输 时，保活计时器会定期发送 Keepalive 探测包（通常是一个空的 ACK）。用于检测 TCP 连接的存活状态，防止连接因长时间没有数据传输而被误认为已断开。
 	if (sock_flag(sk, SOCK_KEEPOPEN))
 		inet_csk_reset_keepalive_timer(sk, keepalive_time_when(tp));
 
@@ -5373,7 +5382,7 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 	tp->syn_data_acked = tp->syn_data;
 	return false;
 }
-
+//这个函数是客户端响应syn-ack数据包的主要逻辑
 static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 					 const struct tcphdr *th, unsigned int len)
 {
@@ -5481,12 +5490,16 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 		smp_mb();
 
+		//连接建立完成
 		tcp_finish_connect(sk, skb);
 
 		if ((tp->syn_fastopen || tp->syn_data) &&
 		    tcp_rcv_fastopen_synack(sk, skb, &foc))
 			return -1;
-
+		//这段代码的 if 逻辑是优化 TCP 的 ACK 发送策略，有助于减少 ACK 开销。
+		//目的是 决定是否推迟发送 ACK 以节省网络资源，并在适当的时机触发 ACK 发送
+		//那么问题是这个延迟会导致服务器的重新传送机制吗，应该不会，这个 if 逻辑并不会让客户端无限期不发 ACK，而只是短暂延迟（通常是 40~200ms）。
+		//服务器的 SYN-ACK 超时重传时间（RTO）一般是 1~3 秒 级别，远大于这个延迟 ACK 时间，所以不会影响三次握手的成功率。
 		if (sk->sk_write_pending ||
 		    icsk->icsk_accept_queue.rskq_defer_accept ||
 		    icsk->icsk_ack.pingpong) {
@@ -5507,6 +5520,7 @@ discard:
 			__kfree_skb(skb);
 			return 0;
 		} else {
+			//立即发送ack报文
 			tcp_send_ack(sk);
 		}
 		return -1;
@@ -5600,7 +5614,7 @@ reset_and_undo:
  *	It's called from both tcp_v4_rcv and tcp_v6_rcv and should be
  *	address independent.
  */
-
+//important
 int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			  const struct tcphdr *th, unsigned int len)
 {
@@ -5650,8 +5664,9 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			return 0;
 		}
 		goto discard;
-
+	//客户端第二次握手的处理
 	case TCP_SYN_SENT:
+		//处理syn-ack数据包
 		queued = tcp_rcv_synsent_state_process(sk, skb, th, len);
 		if (queued >= 0)
 			return queued;
