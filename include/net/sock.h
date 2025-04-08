@@ -305,7 +305,7 @@ struct sock {
 #define sk_bind_node		__sk_common.skc_bind_node
 #define sk_prot			__sk_common.skc_prot     //这里是也是协议操作，和struct proto_ops *ops是有区别的，然后这里只是声明，比如tcp_prot会赋值给她
 #define sk_net			__sk_common.skc_net
-	socket_lock_t		sk_lock;
+	socket_lock_t		sk_lock;    //这是控制socket的锁，socket_lock_t是一个结构体，里面有一个自旋锁和一个等待队列
 	struct sk_buff_head	sk_receive_queue; //接收队列，存储的经过协议处理的数据包后的有效数据
 	/*
 	 * The backlog queue is special, it is always used with

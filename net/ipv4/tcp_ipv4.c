@@ -1667,6 +1667,7 @@ EXPORT_SYMBOL(tcp_v4_conn_request);
  * The three way handshake has completed - we got a valid synack -
  * now create the new socket.
  */
+//这里是创建子socket，也就是创建sock内核对象
 struct sock *tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 				  struct request_sock *req,
 				  struct dst_entry *dst)
@@ -1680,9 +1681,11 @@ struct sock *tcp_v4_syn_recv_sock(struct sock *sk, struct sk_buff *skb,
 #endif
 	struct ip_options_rcu *inet_opt;
 
+	//在第三次握手这里，又继续判断一次全连接队列是否满了，如果满了就直接丢弃
 	if (sk_acceptq_is_full(sk))
 		goto exit_overflow;
 
+	//创建sock并初始化
 	newsk = tcp_create_openreq_child(sk, req, skb);
 	if (!newsk)
 		goto exit_nonewsk;
@@ -1764,6 +1767,7 @@ put_and_exit:
 }
 EXPORT_SYMBOL(tcp_v4_syn_recv_sock);
 
+//服务端收到syn和ack包会走到这里
 static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 {
 	struct tcphdr *th = tcp_hdr(skb);
@@ -1774,6 +1778,8 @@ static struct sock *tcp_v4_hnd_req(struct sock *sk, struct sk_buff *skb)
 	//查找listen socket的半连接队列
 	struct request_sock *req = inet_csk_search_req(sk, &prev, th->source,
 						       iph->saddr, iph->daddr);
+	
+	//如果在半连接中找到了，则返回一个request_sock结构体，然后进入下面的tcp_check_req函数							   
 	if (req)
 		return tcp_check_req(sk, skb, req, prev, false);
 
@@ -1864,11 +1870,12 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 		goto csum_err;
 
 	//服务器端收到第一步握手syn或者第三部ack都会走到这里
-	if (sk->sk_state == TCP_LISTEN) {
+	if (sk->sk_state == TCP_LISTEN) {//服务端的监听的socket一直处于监听的状态
 		struct sock *nsk = tcp_v4_hnd_req(sk, skb);
 		if (!nsk)
 			goto discard;
 
+		//下面是通过服务端创建的子socket进来的
 		if (nsk != sk) {
 			sock_rps_save_rxhash(nsk, skb);
 			if (tcp_child_process(sk, nsk, skb)) {
@@ -1880,6 +1887,7 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	} else
 		sock_rps_save_rxhash(sk, skb);
 
+	//执行到这一步的肯定不是服务器监听的socket，因为他肯定走上面便返回了，所以执行这块的代码是可能是客户端socket，也可能是子socket？
 	if (tcp_rcv_state_process(sk, skb, tcp_hdr(skb), skb->len)) {
 		rsk = sk;
 		goto reset;

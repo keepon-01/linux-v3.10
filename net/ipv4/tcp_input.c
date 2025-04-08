@@ -5699,6 +5699,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 						  FLAG_UPDATE_TS_RECENT) > 0;
 
 		switch (sk->sk_state) {
+		//服务器第三次握手处理，这是通过子socket进来的
 		case TCP_SYN_RECV:
 			if (acceptable) {
 				/* Once we leave TCP_SYN_RECV, we no longer
@@ -5721,6 +5722,16 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 					tp->copied_seq = tp->rcv_nxt;
 				}
 				smp_mb();
+				//改变状态为连接
+				//总结：服务端响应第三次握手的ack所做的工作就是把当前的半连接对象删除，创建了新的子socket后加入全连接队列，最后将新连接的状态设置为ESTABLISHED
+				//注意一点就是服务端的监听的socket的状态始终是listen状态，而创建的子socket的状态为recv和established状态
+
+// 完整连接状态生命周期中：
+
+// 状态	         结构体	          描述
+// LISTEN	    struct sock	    监听 socket 状态
+// SYN_RECV	    request_sock	半连接队列中的连接请求
+// ESTABLISHED	struct sock	    已完成三次握手的通信 socket
 				tcp_set_state(sk, TCP_ESTABLISHED);
 				sk->sk_state_change(sk);
 

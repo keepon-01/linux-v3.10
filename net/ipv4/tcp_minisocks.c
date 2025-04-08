@@ -694,13 +694,20 @@ struct sock *tcp_check_req(struct sock *sk, struct sk_buff *skb,
 	 * ESTABLISHED STATE. If it will be dropped after
 	 * socket is created, wait for troubles.
 	 */
+	//创建子socket
+	//这里返回的子socket是sock结构体，为什么不是socket结构体呢
+	//原因：因为这是内核 TCP 协议栈在三次握手完成时的底层处理，这时并不涉及用户空间，所以也就不需要 struct socket，只需要 struct sock 来完成 TCP 通信控制就足够了。
+	//那什么时候才会创建 struct socket 呢？只有当你在用户空间调用 accept() 的时候：内核从 accept queue 中取出 sock然后创建对应的 socket 结构体并把 socket->sk 设置为你这个子 socket 的 sock，
+	//最终返回一个文件描述符给用户空间 所以 struct socket 是给用户态 syscall 使用的“外壳”  而 struct sock 是通信真正的“引擎”。
 	child = inet_csk(sk)->icsk_af_ops->syn_recv_sock(sk, skb, req, NULL);
 	if (child == NULL)
 		goto listen_overflow;
 
-	inet_csk_reqsk_queue_unlink(sk, req, prev);
+	//清理半连接队列
+	inet_csk_reqsk_queue_unlink(sk, req, prev);//这里的sk是父socket，即服务器一直监听的socket
 	inet_csk_reqsk_queue_removed(sk, req);
 
+	//添加到全连接队列，也就是将握手成功的request_sock对象添加到全连接队列链表的尾部
 	inet_csk_reqsk_queue_add(sk, req, child);
 	return child;
 

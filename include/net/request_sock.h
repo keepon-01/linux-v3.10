@@ -61,7 +61,7 @@ struct request_sock {
 	u32				ts_recent;
 	unsigned long			expires;
 	const struct request_sock_ops	*rsk_ops;
-	struct sock			*sk;
+	struct sock			*sk;     //指向父socket的指针，也就是服务端的一直在监听的socket
 	u32				secid;
 	u32				peer_secid;
 };
